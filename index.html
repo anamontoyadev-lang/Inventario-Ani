@@ -28,7 +28,13 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 ::-webkit-scrollbar-track{background:var(--bg);}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
 
-/* ─── LOGIN ─── */
+/* Reportes: oculto por defecto, visible solo para admin y leader */
+#tab-rep { display: none; }
+body[data-role="admin"] #tab-rep,
+body[data-role="leader"] #tab-rep { display: block; }
+/* Líder: sin acceso a entrada/salida */
+body[data-role="leader"] #mode-row { display: none !important; }
+body[data-role="leader"] #step-bar { display: none !important; }
 .login-screen{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:16px;}
 .login-screen.hidden{display:none;}
 .login-box{background:var(--surface);border:1px solid var(--border);border-radius:24px;padding:36px 28px;width:100%;max-width:400px;box-shadow:0 24px 80px rgba(53,28,117,.25);}
@@ -469,7 +475,7 @@ tr.nr td{animation:rowIn .5s ease;}
         <div class="table-tabs">
           <button class="tab-btn active" id="tab-inv" onclick="showTab('inv')">📦 Inventario</button>
           <button class="tab-btn" id="tab-mov" onclick="showTab('mov')">📋 Movimientos</button>
-          <button class="tab-btn" id="tab-rep" onclick="showTab('rep')" style="display:none">📊 Reportes</button>
+          <button class="tab-btn" id="tab-rep" onclick="showTab('rep')">📊 Reportes</button>
         </div>
         <div class="tbl-actions">
           <button class="btn btn-outline" onclick="loadFromSheets()" style="padding:7px 11px;font-size:12px" title="Sincronizar con Sheets">↻ Sync</button>
@@ -645,6 +651,7 @@ function doLogin(){
 function showApp(){
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
+  document.body.setAttribute('data-role', currentUser.role); // activa CSS de rol
   const uc=document.getElementById('user-chip');
   const roleIco=currentUser.role==='admin'?'👑 ':currentUser.role==='leader'?'👁 ':'🏪 ';
   uc.textContent=roleIco+currentUser.name;
@@ -660,7 +667,7 @@ function showApp(){
   if(isLeader){
     document.getElementById('step-bar').classList.add('hidden');
   }
-  document.getElementById('tab-rep').style.display=(isAdmin||isLeader)?'block':'none';
+  // tab-rep: visible para admin y leader via CSS (body[data-role])
   // Show delete columns for admin
   const thDel=document.getElementById('th-del');
   if(thDel) thDel.style.display=currentUser.role==='admin'?'':'none';
@@ -1220,10 +1227,15 @@ function renderTables(){
 function showTab(t){
   curTab=t;
   ['inv','mov','rep'].forEach(x=>{
+    // Solo toggle clase active en el botón, sin tocar su display (lo controla showApp)
     document.getElementById('tab-'+x)?.classList.toggle('active',x===t);
+    // Solo ocultar/mostrar el panel de contenido (tw-*), no el botón (tab-*)
     const el=document.getElementById('tw-'+x);if(el)el.style.display=x===t?'block':'none';
   });
   if(t==='rep')loadFromSheets().then(()=>renderReports());
+}
+function showTabBtn(id,visible){
+  const el=document.getElementById(id);if(el)el.style.display=visible?'block':'none';
 }
 function renderReports(){
   // Obtener tiendas dinámicamente de los datos reales + lista base
@@ -1430,9 +1442,7 @@ function normalizeBulkRow(r){
   };
 }
 function parseCSV(text){
-  const lines=text.split(/
-?
-/).filter(l=>l.trim());
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
   if(lines.length<2)return [];
   const headers=lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
   return lines.slice(1).map(line=>{
