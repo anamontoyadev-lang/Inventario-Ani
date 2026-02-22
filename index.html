@@ -581,6 +581,13 @@ const CAT={
   }
 };
 
+// ─── STORAGE HELPER (fallback en memoria si LS no disponible) ───
+const _mem={};
+const LS={
+  getItem:k=>{try{return localStorage.getItem(k);}catch(e){return _mem[k]??null;}},
+  setItem:(k,v)=>{try{localStorage.setItem(k,v);}catch(e){_mem[k]=v;}},
+  removeItem:k=>{try{localStorage.removeItem(k);}catch(e){delete _mem[k];}}
+};
 // ─── USERS ───
 const USERS={
   'admin':  {password:'Admin2024!',role:'admin', store:null,      name:'Administrador'},
@@ -596,10 +603,10 @@ const USERS={
 };
 
 // ─── STATE ───
-let inv=JSON.parse(localStorage.getItem('inv_v6')||'[]');
-let mov=JSON.parse(localStorage.getItem('mov_v6')||'[]');
-let scriptUrl=localStorage.getItem('imei_url_v6')||'';
-let currentUser=JSON.parse(localStorage.getItem('imei_user')||'null');
+let inv=(()=>{try{return JSON.parse(LS.getItem('inv_v6')||'[]');}catch(e){return [];}})();
+let mov=(()=>{try{return JSON.parse(LS.getItem('mov_v6')||'[]');}catch(e){return [];}})();
+let scriptUrl=(()=>{try{return LS.getItem('imei_url_v6')||'';}catch(e){return '';}})();
+let currentUser=(()=>{try{return JSON.parse(LS.getItem('imei_user')||'null');}catch(e){return null;}})();
 let mode='entry',scannerRunning=false,currentStep=1,scanLocked=false,detBuf=[];
 let sv={imei1:'',imei2:'',serial:''};
 let selPlat='',selColor='',photoData=null,curTab='inv';
@@ -625,7 +632,7 @@ function luhnCheck(num){
 function onUrlInput(){
   const v=document.getElementById('url-inp').value.trim();
   if(v.includes('script.google.com')&&v.includes('/exec')){
-    scriptUrl=v;localStorage.setItem('imei_url_v6',v);
+    scriptUrl=v;try{LS.setItem('imei_url_v6',v);}catch(e){}
     document.getElementById('url-inp').classList.add('ok');
   }
 }
@@ -641,11 +648,11 @@ function doLogin(){
   const err=document.getElementById('login-err');
   err.classList.remove('vis');
   if(!user||!pass){err.textContent='Ingresa usuario y contraseña';err.classList.add('vis');return;}
-  if(!scriptUrl||!scriptUrl.includes('/exec')){err.textContent='Primero guarda la URL del Apps Script';err.classList.add('vis');return;}
+  // URL es opcional al login; se puede usar en modo offline sin sync
   const u=USERS[user];
   if(!u||u.password!==pass){err.textContent='Usuario o contraseña incorrectos';err.classList.add('vis');return;}
   currentUser={username:user,role:u.role,store:u.store,name:u.name};
-  localStorage.setItem('imei_user',JSON.stringify(currentUser));
+  try{LS.setItem('imei_user',JSON.stringify(currentUser));}catch(e){}
   showApp();loadFromSheets().then(()=>{startNotifPolling();});
 }
 function showApp(){
@@ -679,7 +686,7 @@ function showApp(){
   if(btnBulk) btnBulk.style.display=(isAdmin||currentUser.role==='store')?'':'none';
 }
 function logout(){
-  currentUser=null;localStorage.removeItem('imei_user');stopNotifPolling();
+  currentUser=null;try{LS.removeItem('imei_user');}catch(e){}stopNotifPolling();
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');
   stopScanner();
@@ -1088,8 +1095,7 @@ async function confirmExit(){
 
 // ─── SYNC ───
 function saveData(){
-  localStorage.setItem('inv_v6',JSON.stringify(inv.map(r=>({...r,photoLocal:null}))));
-  localStorage.setItem('mov_v6',JSON.stringify(mov));
+  try{LS.setItem('inv_v6',JSON.stringify(inv.map(r=>({...r,photoLocal:null}))));LS.setItem('mov_v6',JSON.stringify(mov));}catch(e){}
 }
 async function syncEntry(row){
   if(!scriptUrl){row.syncStatus='pending';saveData();updateQueueBar();return;}
@@ -1546,9 +1552,9 @@ function stopNotifPolling(){
 // ─── INIT ───
 if(scriptUrl)document.getElementById('url-inp').value=scriptUrl;
 // Limpiar caché vieja de versiones anteriores
-if(localStorage.getItem('inv_v5')){localStorage.removeItem('inv_v5');localStorage.removeItem('mov_v5');}
+try{if(LS.getItem('inv_v5')){LS.removeItem('inv_v5');LS.removeItem('mov_v5');}}catch(e){}
 if(currentUser&&scriptUrl&&scriptUrl.includes('/exec')){showApp();loadFromSheets().then(()=>{startNotifPolling();});}
-else{currentUser=null;localStorage.removeItem('imei_user');}
+else{currentUser=null;try{LS.removeItem('imei_user');}catch(e){}}
 </script>
 </body>
 </html>
