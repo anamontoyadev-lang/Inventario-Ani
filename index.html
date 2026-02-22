@@ -361,7 +361,7 @@ tr.nr td{animation:rowIn .5s ease;}
     </div>
   </div>
 
-  <div class="mode-toggle">
+  <div class="mode-toggle" id="mode-row">
     <button class="mode-btn" id="btn-entry" onclick="setMode('entry')">✅ Entrada</button>
     <button class="mode-btn" id="btn-exit" onclick="setMode('exit')">🔴 Salida</button>
   </div>
@@ -638,12 +638,7 @@ function doLogin(){
   if(!scriptUrl||!scriptUrl.includes('/exec')){err.textContent='Primero guarda la URL del Apps Script';err.classList.add('vis');return;}
   const u=USERS[user];
   if(!u||u.password!==pass){err.textContent='Usuario o contraseña incorrectos';err.classList.add('vis');return;}
- currentUser={
-  username:user,
-  role:u.role.toLowerCase().trim(),
-  store:u.store,
-  name:u.name
-};
+  currentUser={username:user,role:u.role,store:u.store,name:u.name};
   localStorage.setItem('imei_user',JSON.stringify(currentUser));
   showApp();loadFromSheets().then(()=>{startNotifPolling();});
 }
@@ -654,21 +649,25 @@ function showApp(){
   const roleIco=currentUser.role==='admin'?'👑 ':currentUser.role==='leader'?'👁 ':'🏪 ';
   uc.textContent=roleIco+currentUser.name;
   uc.className='user-chip '+(currentUser.role==='admin'?'admin':currentUser.role==='leader'?'leader':'store');
-  document.getElementById('tb-sub').textContent=currentUser.role==='admin'?'Vista global — todas las tiendas':currentUser.role==='leader'?'Vista de leader — todas las tiendas (solo lectura)':currentUser.store;
-  // Leader: ocultar modo entry/exit, solo ver tablas y reportes
+  document.getElementById('tb-sub').textContent=currentUser.role==='admin'?'Vista global — todas las tiendas':currentUser.role==='leader'?'Vista de líder — todas las tiendas (solo lectura)':currentUser.store;
+  // Líder: ocultar modo entry/exit, solo ver tablas y reportes
   const isLeader=currentUser.role==='leader';
   const isAdmin=currentUser.role==='admin';
-  document.getElementById('mode-row').style.display=(isLeader)?'none':'flex';
+  const modeRow=document.getElementById('mode-row');
+  if(modeRow) modeRow.style.display=(isLeader)?'none':'';
   document.getElementById('entry-panel').style.display='none';
   document.getElementById('exit-panel').style.display='none';
-  document.getElementById('tab-rep').style.display=(currentUser.role==='admin'||currentUser.role==='leader')?'block':'none';
+  if(isLeader){
+    document.getElementById('step-bar').classList.add('hidden');
+  }
+  document.getElementById('tab-rep').style.display=(isAdmin||isLeader)?'block':'none';
   // Show delete columns for admin
   const thDel=document.getElementById('th-del');
   if(thDel) thDel.style.display=currentUser.role==='admin'?'':'none';
   const thDelMov=document.getElementById('th-del-mov');
   if(thDelMov) thDelMov.style.display=currentUser.role==='admin'?'':'none';
   if(!isLeader) setMode('entry');
-  // Mostrar botón importación masiva solo para admin 
+  // Mostrar botón importación masiva solo para admin y tienda
   const btnBulk=document.getElementById('btn-bulk');
   if(btnBulk) btnBulk.style.display=(isAdmin||currentUser.role==='store')?'':'none';
 }
@@ -684,7 +683,7 @@ async function loadFromSheets(){
   if(!scriptUrl||!currentUser)return;
   setSP('send','⟳ Cargando...');
   try{
-    const url=scriptUrl+'?action=get_data&role='+encodeURIComponent(currentUser.role==='leader'?'admin':currentUser.role)+'&store='+encodeURIComponent(currentUser.store||'');
+    const url=scriptUrl+'?action=get_data&role='+encodeURIComponent(currentUser.role==='leader'?'admin':currentUser.role)+'&store='+encodeURIComponent((currentUser.store&&currentUser.store!=='null')?currentUser.store:'');
     const res=await fetch(url);
     const data=await res.json();
     if(data.success){
@@ -986,6 +985,7 @@ function updateConf(conf){
 
 // ─── SAVE ENTRY ───
 async function saveEntry(){
+  if(currentUser&&currentUser.role==='leader'){showFb('⚠ Los líderes no pueden registrar entradas','error');return;}
   const imei1=document.getElementById('f-imei1').value.trim();
   if(!imei1){showFb('⚠ IMEI 1 es obligatorio','error');return;}
 
@@ -1034,6 +1034,7 @@ async function saveEntry(){
 
 // ─── CONFIRM EXIT ───
 async function confirmExit(){
+  if(currentUser&&currentUser.role==='leader'){showFb('⚠ Los líderes no pueden registrar salidas','error');return;}
   const imei1=document.getElementById('exit-imei').value.trim();
   if(!imei1){showFb('⚠ Escanea o escribe el IMEI','error');return;}
   let item=inv.find(r=>String(r.imei1).trim()===imei1);
@@ -1225,7 +1226,10 @@ function showTab(t){
   if(t==='rep')loadFromSheets().then(()=>renderReports());
 }
 function renderReports(){
-  const stores=['Tienda 1','Tienda 2','Tienda 3','Tienda 4','Tienda 5','Tienda 6','Tienda 7'];
+  // Obtener tiendas dinámicamente de los datos reales + lista base
+  const baseStores=['Tienda 1','Tienda 2','Tienda 3','Tienda 4','Tienda 5','Tienda 6','Tienda 7'];
+  const dynStores=[...new Set([...baseStores,...inv.map(r=>r.store),...mov.map(r=>r.store)].filter(s=>s&&s!=='null'&&s!=='undefined'))].sort();
+  const stores=dynStores.length?dynStores:baseStores;
   const ts=inv.filter(r=>String(r.stock)==='1'||r.stock===1).length;
   const to=inv.filter(r=>String(r.stock)==='0'||r.stock===0).length;
   const te=mov.filter(r=>r.type&&r.type.includes('ENTRADA')).length;
@@ -1426,23 +1430,16 @@ function normalizeBulkRow(r){
   };
 }
 function parseCSV(text){
-    const lines = text.split(/\r?\n/).filter(l => l.trim());
-
-    if(lines.length < 2) return [];
-
-    const headers = lines[0]
-        .split(',')
-        .map(h => h.replace(/"/g,'').trim());
-
-    return lines.slice(1).map(line => {
-        const vals = line
-            .split(',')
-            .map(v => v.replace(/"/g,'').trim());
-
-        const obj = {};
-        headers.forEach((h,i)=> obj[h] = vals[i] || '');
-        return obj;
-    });
+  const lines=text.split(/
+?
+/).filter(l=>l.trim());
+  if(lines.length<2)return [];
+  const headers=lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
+  return lines.slice(1).map(line=>{
+    const vals=line.split(',').map(v=>v.replace(/"/g,'').trim());
+    const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||'');
+    return obj;
+  });
 }
 function renderBulkPreview(){
   if(!bulkRows.length){document.getElementById('bulk-status').textContent='No se encontraron filas con IMEI válido';document.getElementById('bulk-import-btn').disabled=true;return;}
