@@ -638,7 +638,12 @@ function doLogin(){
   if(!scriptUrl||!scriptUrl.includes('/exec')){err.textContent='Primero guarda la URL del Apps Script';err.classList.add('vis');return;}
   const u=USERS[user];
   if(!u||u.password!==pass){err.textContent='Usuario o contraseña incorrectos';err.classList.add('vis');return;}
-  currentUser={username:user,role:u.role,store:u.store,name:u.name};
+ currentUser={
+  username:user,
+  role:u.role.toLowerCase().trim(),
+  store:u.store,
+  name:u.name
+};
   localStorage.setItem('imei_user',JSON.stringify(currentUser));
   showApp();loadFromSheets().then(()=>{startNotifPolling();});
 }
@@ -649,8 +654,8 @@ function showApp(){
   const roleIco=currentUser.role==='admin'?'👑 ':currentUser.role==='leader'?'👁 ':'🏪 ';
   uc.textContent=roleIco+currentUser.name;
   uc.className='user-chip '+(currentUser.role==='admin'?'admin':currentUser.role==='leader'?'leader':'store');
-  document.getElementById('tb-sub').textContent=currentUser.role==='admin'?'Vista global — todas las tiendas':currentUser.role==='leader'?'Vista de líder — todas las tiendas (solo lectura)':currentUser.store;
-  // Líder: ocultar modo entry/exit, solo ver tablas y reportes
+  document.getElementById('tb-sub').textContent=currentUser.role==='admin'?'Vista global — todas las tiendas':currentUser.role==='leader'?'Vista de leader — todas las tiendas (solo lectura)':currentUser.store;
+  // Leader: ocultar modo entry/exit, solo ver tablas y reportes
   const isLeader=currentUser.role==='leader';
   const isAdmin=currentUser.role==='admin';
   document.getElementById('mode-row').style.display=(isLeader)?'none':'flex';
@@ -663,7 +668,7 @@ function showApp(){
   const thDelMov=document.getElementById('th-del-mov');
   if(thDelMov) thDelMov.style.display=currentUser.role==='admin'?'':'none';
   if(!isLeader) setMode('entry');
-  // Mostrar botón importación masiva solo para admin y tienda
+  // Mostrar botón importación masiva solo para admin 
   const btnBulk=document.getElementById('btn-bulk');
   if(btnBulk) btnBulk.style.display=(isAdmin||currentUser.role==='store')?'':'none';
 }
