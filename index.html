@@ -481,7 +481,7 @@ tr.nr td{animation:rowIn .5s ease;}
           <select id="f-store" onchange="renderTables()" style="font-size:12px"><option value="">Todas las tiendas</option><option>Tienda 1</option><option>Tienda 2</option><option>Tienda 3</option><option>Tienda 4</option><option>Tienda 5</option><option>Tienda 6</option><option>Tienda 7</option></select>
           <select id="f-type" onchange="renderTables()" style="font-size:12px"><option value="">Entradas y Salidas</option><option value="ENTRADA">Solo Entradas ✅</option><option value="SALIDA">Solo Salidas 🔴</option></select>
         </div>
-        <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tienda</th><th>Tipo</th><th>IMEI 1</th><th>Marca</th><th>Modelo</th><th>Precio</th><th>Fecha</th><th>Hora</th><th>Notas</th></tr></thead><tbody id="tb-mov"></tbody></table></div>
+        <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tienda</th><th>Tipo</th><th>IMEI 1</th><th>Marca</th><th>Modelo</th><th>Precio</th><th>Fecha</th><th>Hora</th><th>Notas</th><th id="th-del-mov" style="display:none">Eliminar</th></tr></thead><tbody id="tb-mov"></tbody></table></div>
       </div>
 
       <!-- REPORTS -->
@@ -502,7 +502,7 @@ tr.nr td{animation:rowIn .5s ease;}
   </div>
 </div>
 
-<!-- MODAL CONFIRM DELETE -->
+<!-- MODAL CONFIRM DELETE IMEI -->
 <div class="modal-overlay" id="modal-del">
   <div class="modal">
     <h3>¿Eliminar este IMEI?</h3>
@@ -510,6 +510,18 @@ tr.nr td{animation:rowIn .5s ease;}
     <div class="modal-btns">
       <button class="btn btn-outline" onclick="closeModal('modal-del')">Cancelar</button>
       <button class="btn btn-danger" onclick="confirmDelete()">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIRM DELETE MOVIMIENTO -->
+<div class="modal-overlay" id="modal-del-mov">
+  <div class="modal">
+    <h3>¿Eliminar este movimiento?</h3>
+    <p id="modal-del-mov-txt">Este movimiento se eliminará del historial local y de Google Sheets.</p>
+    <div class="modal-btns">
+      <button class="btn btn-outline" onclick="closeModal('modal-del-mov')">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmDeleteMov()">Eliminar</button>
     </div>
   </div>
 </div>
@@ -548,13 +560,23 @@ let currentUser=JSON.parse(localStorage.getItem('imei_user')||'null');
 let mode='entry',scannerRunning=false,currentStep=1,scanLocked=false,detBuf=[];
 let sv={imei1:'',imei2:'',serial:''};
 let selPlat='',selColor='',photoData=null,curTab='inv';
-let pendingDeleteImei='';
 
 const isIMEI=c=>/^\d{14,15}$/.test(c.trim());
 const isSerial=c=>/^[A-Z0-9]{8,20}$/i.test(c.trim())&&!/^\d{14,15}$/.test(c.trim());
 const STEPS={1:{l:'IMEI 1',b:'bi1',v:isIMEI,f:'imei1'},2:{l:'IMEI 2',b:'bi2',v:isIMEI,f:'imei2'},3:{l:'Serial',b:'bi3',v:isSerial,f:'serial'}};
 const EXIT_S={l:'IMEI',b:'bix',v:isIMEI};
-const REQ=5,MIN_C=0.78;
+const REQ=7,MIN_C=0.88;   // 7 lecturas idénticas, 88% confianza mínima por lectura
+
+// Algoritmo de Luhn — valida que un IMEI de 15 dígitos sea matemáticamente correcto
+function luhnCheck(num){
+  let s=0,alt=false;
+  for(let i=num.length-1;i>=0;i--){
+    let n=parseInt(num[i],10);
+    if(alt){n*=2;if(n>9)n-=9;}
+    s+=n;alt=!alt;
+  }
+  return s%10===0;
+}
 
 // ─── LOGIN ───
 function onUrlInput(){
@@ -591,9 +613,11 @@ function showApp(){
   uc.className='user-chip '+(currentUser.role==='admin'?'admin':'store');
   document.getElementById('tb-sub').textContent=currentUser.role==='admin'?'Vista global — todas las tiendas':currentUser.store;
   document.getElementById('tab-rep').style.display=currentUser.role==='admin'?'block':'none';
-  // Show delete column for admin
+  // Show delete columns for admin
   const thDel=document.getElementById('th-del');
   if(thDel) thDel.style.display=currentUser.role==='admin'?'':'none';
+  const thDelMov=document.getElementById('th-del-mov');
+  if(thDelMov) thDelMov.style.display=currentUser.role==='admin'?'':'none';
   setMode('entry');
 }
 function logout(){
@@ -753,9 +777,21 @@ function startScanner(){
       </div>
     </div>`);
   Quagga.init({
-    inputStream:{name:"Live",type:"LiveStream",target:con,constraints:{facingMode:"environment",width:{ideal:1920},height:{ideal:1080}}},
-    decoder:{readers:["code_128_reader","code_39_reader","ean_reader","upc_reader"],debug:{drawBoundingBox:false,showFrequency:false,drawScanline:false,showPattern:false}},
-    locate:true,frequency:20
+    inputStream:{
+      name:"Live",type:"LiveStream",target:con,
+      constraints:{facingMode:"environment",width:{min:1280,ideal:1920,max:1920},height:{min:720,ideal:1080,max:1080}},
+      area:{top:"30%",right:"5%",left:"5%",bottom:"30%"} // solo procesa la franja del marco
+    },
+    locator:{patchSize:"medium",halfSample:true},
+    numOfWorkers:navigator.hardwareConcurrency>2?2:1,
+    frequency:25,
+    decoder:{
+      readers:[
+        {format:"code_128_reader",config:{}}  // Code128 primero y solo — IMEIs siempre son Code128
+      ],
+      multiple:false
+    },
+    locate:true
   },err=>{
     if(err){showFb('✗ Error cámara: '+(err.message||err),'error');document.getElementById('sc-ph').style.display='flex';con.querySelector('#sc-overlay')?.remove();con.querySelector('#sc-badge')?.remove();return;}
     Quagga.start();scannerRunning=true;scanLocked=false;detBuf=[];
@@ -771,27 +807,46 @@ function startScanner(){
     if(!r?.codeResult?.code)return;
     const codes=r.codeResult.decodedCodes.filter(x=>x.error!==undefined);
     if(!codes.length)return;
-    const conf=codes.reduce((a,x)=>a+(1-x.error),0)/codes.length;
+    const conf=1-codes.reduce((a,x)=>a+x.error,0)/codes.length;
     updateConf(conf);
     const code=r.codeResult.code;
     document.getElementById('cr-l').textContent=mode==='exit'?'IMEI':(STEPS[currentStep]?.l||'Leyendo');
     document.getElementById('cr-v').className='cr-v vld';
-    document.getElementById('cr-v').textContent=code.length>18?code.substring(0,18)+'…':code;
+    document.getElementById('cr-v').textContent=code.length>20?code.substring(0,20)+'…':code;
   });
   Quagga.onDetected(r=>{
     if(scanLocked)return;
     const code=r.codeResult.code.trim();
+
+    // Calidad de la lectura actual
     const codes=r.codeResult.decodedCodes.filter(x=>x.error!==undefined);
     if(!codes.length)return;
-    const conf=codes.reduce((a,x)=>a+(1-x.error),0)/codes.length;
+    const conf=1-codes.reduce((a,x)=>a+x.error,0)/codes.length;
     if(conf<MIN_C)return;
+
+    // Validar formato según paso actual
     const cfg=mode==='exit'?EXIT_S:STEPS[currentStep];
     if(!cfg.v(code))return;
+
+    // Validación Luhn para IMEIs (paso 1 y 2, y salida)
+    if((mode==='exit'||currentStep<=2)&&/^\d{15}$/.test(code)){
+      if(!luhnCheck(code))return; // descarta lecturas que no pasan el checksum
+    }
+
+    // Buffer de coincidencias: acumular y exigir mayoría calificada
     detBuf.push(code);
-    if(detBuf.length>REQ*3)detBuf.shift();
+    if(detBuf.length>REQ*4)detBuf.shift();
     const counts={};detBuf.forEach(c=>counts[c]=(counts[c]||0)+1);
     const[bc,bn]=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
-    if(bn>=REQ){scanLocked=true;detBuf=[];updateConf(1);onConfirmed(bc);}
+
+    // Actualizar barra de progreso hacia confirmación
+    updateConf(Math.min(bn/REQ,0.99));
+
+    if(bn>=REQ){
+      scanLocked=true;detBuf=[];
+      updateConf(1);
+      onConfirmed(bc);
+    }
   });
 }
 function onConfirmed(code){mode==='exit'?onExitScan(code):onEntryStep(code);}
@@ -968,33 +1023,6 @@ async function confirmExit(){
   showTab('mov');
 }
 
-// ─── DELETE (admin only) ───
-function openDeleteModal(imei1){
-  pendingDeleteImei=imei1;
-  document.getElementById('modal-del-txt').textContent='Se eliminará el IMEI '+imei1+' del inventario. Los movimientos históricos se conservan en Sheets.';
-  document.getElementById('modal-del').classList.add('open');
-}
-async function confirmDelete(){
-  closeModal('modal-del');
-  const imei1=pendingDeleteImei;
-  if(!imei1)return;
-  // Remove from local
-  const idx=inv.findIndex(r=>String(r.imei1).trim()===imei1);
-  if(idx>-1)inv.splice(idx,1);
-  saveData();renderTables();updateStats();
-  showFb('🗑 Eliminando de Sheets...','pending');
-  if(scriptUrl){
-    try{
-      const res=await fetch(scriptUrl,{method:'POST',
-        body:JSON.stringify({action:'delete_imei',imei1,role:currentUser.role}),
-        headers:{'Content-Type':'text/plain'}});
-      const text=await res.text();
-      let d;try{d=JSON.parse(text);}catch(e){d={success:false,error:'Respuesta inválida'};}
-      showFb(d.success?'✅ IMEI eliminado. Ya puede re-ingresarse.':'⚠ Eliminado local, error Sheets: '+d.error,d.success?'success':'error');
-    }catch(e){showFb('⚠ Eliminado localmente. Sin conexión.','error');}
-  }else showFb('✅ Eliminado localmente','success');
-}
-
 // ─── SYNC ───
 function saveData(){
   localStorage.setItem('inv_v6',JSON.stringify(inv.map(r=>({...r,photoLocal:null}))));
@@ -1116,7 +1144,7 @@ function renderTables(){
   let fm=mov;
   if(fStore)fm=fm.filter(r=>r.store===fStore);
   if(fType)fm=fm.filter(r=>r.type&&r.type.includes(fType));
-  if(!fm.length){tbm.innerHTML=`<tr><td colspan="10"><div class="empty-state"><div class="big">📋</div><p>Sin movimientos</p></div></td></tr>`;updateQueueBar();return;}
+  if(!fm.length){tbm.innerHTML=`<tr><td colspan="11"><div class="empty-state"><div class="big">📋</div><p>Sin movimientos</p></div></td></tr>`;updateQueueBar();return;}
   tbm.innerHTML=fm.map((r,i)=>`<tr>
     <td style="color:var(--muted);font-size:10px;font-family:'JetBrains Mono',monospace">${fm.length-i}</td>
     <td><span class="store-tag">${r.store||'—'}</span></td>
@@ -1128,6 +1156,7 @@ function renderTables(){
     <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${r.date||'—'}</td>
     <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${r.time||'—'}</td>
     <td style="font-size:11px;color:var(--muted)">${r.notes||'—'}</td>
+    ${isAdmin?`<td><button class="del-btn" onclick="openDeleteMovModal(${mov.indexOf(r)})">🗑</button></td>`:''}
   </tr>`).join('');
   updateQueueBar();
 }
@@ -1212,6 +1241,61 @@ function exportCSV(){
 function openClearModal(){document.getElementById('modal-clear').classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 function clearAll(){inv=[];mov=[];saveData();renderTables();closeModal('modal-clear');}
+
+// ─── ELIMINAR IMEI (admin) ───
+let pendingDeleteImei='';
+function openDeleteModal(imei1){
+  pendingDeleteImei=imei1;
+  document.getElementById('modal-del-txt').textContent='Se eliminará el IMEI '+imei1+' del inventario. Los movimientos en Sheets se conservan.';
+  document.getElementById('modal-del').classList.add('open');
+}
+async function confirmDelete(){
+  closeModal('modal-del');
+  if(!pendingDeleteImei)return;
+  const imei1=pendingDeleteImei;
+  const idx=inv.findIndex(r=>String(r.imei1).trim()===imei1);
+  if(idx>-1)inv.splice(idx,1);
+  saveData();renderTables();updateStats();
+  showFb('🗑 Eliminando de Sheets...','pending');
+  if(scriptUrl){
+    try{
+      const res=await fetch(scriptUrl,{method:'POST',body:JSON.stringify({action:'delete_imei',imei1,role:currentUser.role}),headers:{'Content-Type':'text/plain'}});
+      const text=await res.text();
+      let d;try{d=JSON.parse(text);}catch(e){d={success:false,error:'Respuesta inválida'};}
+      showFb(d.success?'✅ IMEI eliminado. Puede re-ingresarse.':'⚠ Eliminado local, error Sheets: '+d.error,d.success?'success':'error');
+    }catch(e){showFb('⚠ Eliminado localmente. Sin conexión.','error');}
+  }else showFb('✅ Eliminado localmente','success');
+}
+
+// ─── ELIMINAR MOVIMIENTO (admin) ───
+let pendingDeleteMovIdx=-1;
+function openDeleteMovModal(globalIdx){
+  pendingDeleteMovIdx=globalIdx;
+  const r=mov[globalIdx];
+  if(!r)return;
+  const tipo=r.type&&r.type.includes('ENTRADA')?'ENTRADA':'SALIDA';
+  document.getElementById('modal-del-mov-txt').textContent=
+    'Eliminar movimiento '+tipo+' del IMEI '+r.imei1+' ('+r.date+' '+r.time+'). Se borrará de Sheets también.';
+  document.getElementById('modal-del-mov').classList.add('open');
+}
+async function confirmDeleteMov(){
+  closeModal('modal-del-mov');
+  if(pendingDeleteMovIdx<0)return;
+  const r=mov[pendingDeleteMovIdx];
+  if(!r)return;
+  mov.splice(pendingDeleteMovIdx,1);
+  pendingDeleteMovIdx=-1;
+  saveData();renderTables();
+  showFb('🗑 Eliminando movimiento de Sheets...','pending');
+  if(scriptUrl){
+    try{
+      const res=await fetch(scriptUrl,{method:'POST',body:JSON.stringify({action:'delete_mov',imei1:r.imei1,date:r.date,time:r.time,type:r.type,role:currentUser.role}),headers:{'Content-Type':'text/plain'}});
+      const text=await res.text();
+      let d;try{d=JSON.parse(text);}catch(e){d={success:false,error:'Respuesta inválida'};}
+      showFb(d.success?'✅ Movimiento eliminado correctamente':'⚠ Eliminado local, error Sheets: '+d.error,d.success?'success':'error');
+    }catch(e){showFb('⚠ Eliminado localmente. Sin conexión.','error');}
+  }else showFb('✅ Movimiento eliminado localmente','success');
+}
 
 // ─── INIT ───
 if(scriptUrl)document.getElementById('url-inp').value=scriptUrl;
