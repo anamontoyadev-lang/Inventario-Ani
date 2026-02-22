@@ -1421,16 +1421,23 @@ function normalizeBulkRow(r){
   };
 }
 function parseCSV(text){
-  const lines=text.split(/
-?
-/).filter(l=>l.trim());
-  if(lines.length<2)return [];
-  const headers=lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
-  return lines.slice(1).map(line=>{
-    const vals=line.split(',').map(v=>v.replace(/"/g,'').trim());
-    const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||'');
-    return obj;
-  });
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+
+    if(lines.length < 2) return [];
+
+    const headers = lines[0]
+        .split(',')
+        .map(h => h.replace(/"/g,'').trim());
+
+    return lines.slice(1).map(line => {
+        const vals = line
+            .split(',')
+            .map(v => v.replace(/"/g,'').trim());
+
+        const obj = {};
+        headers.forEach((h,i)=> obj[h] = vals[i] || '');
+        return obj;
+    });
 }
 function renderBulkPreview(){
   if(!bulkRows.length){document.getElementById('bulk-status').textContent='No se encontraron filas con IMEI válido';document.getElementById('bulk-import-btn').disabled=true;return;}
