@@ -686,11 +686,19 @@ function onPhoto(e){
   reader.onload=ev=>{
     const img=new Image();
     img.onload=()=>{
-      const c=document.createElement('canvas'),MAX=800;
+      const c=document.createElement('canvas');
+      // Max 600px para mantener base64 bajo 200KB
+      const MAX=600;
       let w=img.width,h=img.height;
-      if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
-      c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
-      photoData=c.toDataURL('image/jpeg',0.75);
+      if(w>h){if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}}
+      else{if(h>MAX){w=Math.round(w*MAX/h);h=MAX;}}
+      c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      // Calidad 0.65 para reducir tamaño
+      photoData=c.toDataURL('image/jpeg',0.65);
+      // Log del tamaño para debugging
+      const sizeKB=Math.round(photoData.length*0.75/1024);
+      console.log('Foto comprimida: '+w+'x'+h+'px, ~'+sizeKB+'KB base64');
       document.getElementById('photo-img').src=photoData;
       document.getElementById('photo-img').style.display='block';
       document.getElementById('no-photo').style.display='none';
@@ -1008,19 +1016,56 @@ async function syncEntry(row){
 }
 async function uploadPhoto(row){
   if(!row.photoLocal||!scriptUrl)return;
-  if(!row.photoLocal.startsWith('data:image')){showFb('⚠ Foto inválida','error');return;}
+  if(!row.photoLocal.startsWith('data:image')){
+    showFb('⚠ Foto inválida — no tiene formato correcto','error');
+    console.error('Photo invalid format, starts with:',row.photoLocal.substring(0,30));
+    return;
+  }
+  const sizeKB=Math.round(row.photoLocal.length*0.75/1024);
+  console.log('Enviando foto al Drive, tamaño ~'+sizeKB+'KB');
+  if(sizeKB>1500){
+    showFb('⚠ Foto muy grande ('+sizeKB+'KB). Intenta con una imagen más pequeña.','error');
+    return;
+  }
+  showFb('🖼 Subiendo foto ('+sizeKB+'KB)...','pending');
   try{
-    const res=await fetch(scriptUrl,{method:'POST',
-      body:JSON.stringify({action:'save_photo',imei1:row.imei1,photoBase64:row.photoLocal,store:row.store||'Admin',filename:row.imei1+'_'+Date.now()+'.jpg'}),
-      headers:{'Content-Type':'text/plain'}});
+    const payload={
+      action:'save_photo',
+      imei1:String(row.imei1),
+      photoBase64:row.photoLocal,
+      store:String(row.store||'Admin'),
+      filename:String(row.imei1)+'_'+Date.now()+'.jpg'
+    };
+    const bodyStr=JSON.stringify(payload);
+    console.log('Payload size:',Math.round(bodyStr.length/1024),'KB');
+    const res=await fetch(scriptUrl,{
+      method:'POST',
+      body:bodyStr,
+      headers:{'Content-Type':'text/plain'}
+    });
     const text=await res.text();
-    let d;try{d=JSON.parse(text);}catch(e){showFb('⚠ Error foto (respuesta inválida)','error');console.error('PhotoResp:',text);return;}
+    console.log('Drive response:',text.substring(0,200));
+    let d;
+    try{d=JSON.parse(text);}
+    catch(e){
+      showFb('⚠ Error foto: respuesta no válida del servidor','error');
+      console.error('Photo response parse error. Raw:',text);
+      return;
+    }
     if(d.success){
-      row.photoUrl=d.photoUrl;row.photoLocal=null;
+      row.photoUrl=d.photoUrl;
+      row.photoLocal=null;
       saveData();renderTables();
       showFb('📸 Foto guardada en Drive ✓','success');
-    }else{showFb('⚠ Error foto: '+d.error,'error');console.error('PhotoErr:',d.error);}
-  }catch(e){showFb('⚠ Error de red al subir foto','error');console.error(e);}
+      console.log('Photo URL:',d.photoUrl);
+    } else {
+      showFb('⚠ Error Drive: '+d.error,'error');
+      console.error('Drive error:',d.error);
+    }
+  }catch(e){
+    showFb('⚠ Error de red al subir foto','error');
+    console.error('uploadPhoto network error:',e);
+  }
 }
 async function retrySyncAll(){
   const p=inv.filter(r=>r.syncStatus==='pending'||r.syncStatus==='error');
