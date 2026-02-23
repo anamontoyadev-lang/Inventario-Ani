@@ -1229,10 +1229,13 @@ function updateQueueBar(){
 // ─── RENDER ───
 function updateStats(){
   const s=inv.filter(r=>String(r.stock)==='1'||r.stock===1).length;
-  const o=inv.filter(r=>String(r.stock)==='0'||r.stock===0).length;
+  // Salidas desde mov (fuente correcta)
+  const o=mov.filter(r=>r.type&&r.type.includes('SALIDA')).length;
+  // Total = equipos en stock + equipos vendidos = total real del sistema
+  const t=s+o;
   document.getElementById('cnt-stock').textContent=s;
   document.getElementById('cnt-out').textContent=o;
-  document.getElementById('cnt-total').textContent=inv.length;
+  document.getElementById('cnt-total').textContent=t;
 }
 function renderTables(){
   updateStats();
