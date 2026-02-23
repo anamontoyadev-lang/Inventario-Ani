@@ -777,7 +777,13 @@ function doLogin(){
   if(!u||u.password!==pass){err.textContent='Usuario o contraseña incorrectos';err.classList.add('vis');return;}
   currentUser={username:user,role:u.role,store:u.store,name:u.name};
   try{LS.setItem('imei_user',JSON.stringify(currentUser));}catch(e){}
-  showApp();loadFromSheets().then(()=>{startNotifPolling();});
+  showApp();
+  loadFromSheets().then(()=>{
+    renderTables();
+    updateStats();
+    initSeenMovs();
+    startNotifPolling();
+  });
 }
 function showApp(){
   document.getElementById('login-screen').classList.add('hidden');
@@ -1322,65 +1328,67 @@ function updateQueueBar(){
 // ─── RENDER ───
 function updateStats(){
   const s=inv.filter(r=>String(r.stock)==='1'||r.stock===1).length;
-  // Salidas desde mov (fuente correcta)
   const o=mov.filter(r=>r.type&&r.type.includes('SALIDA')).length;
-  // Total = equipos en stock + equipos vendidos = total real del sistema
   const t=s+o;
-  document.getElementById('cnt-stock').textContent=s;
-  document.getElementById('cnt-out').textContent=o;
-  document.getElementById('cnt-total').textContent=t;
-  // Actualizar subtítulo del topbar con info de sincronización
-  const subEl=document.getElementById('topbar-sub');
-  if(subEl){
-    if(inv.length>0||mov.length>0){
-      subEl.textContent=currentUser&&currentUser.role==='admin'
-        ?'Vista global — todas las tiendas'
-        :(currentUser&&currentUser.store?currentUser.store:'');
-    }
-  }
+  const cntStock=document.getElementById('cnt-stock');
+  const cntOut=document.getElementById('cnt-out');
+  const cntTotal=document.getElementById('cnt-total');
+  if(cntStock) cntStock.textContent=s;
+  if(cntOut)   cntOut.textContent=o;
+  if(cntTotal) cntTotal.textContent=t;
 }
 function renderTables(){
   updateStats();
   const si=s=>s==='synced'?'<span style="color:var(--success)">✓</span>':s==='sending'?'<span class="spin">⟳</span>':s==='error'?'<span style="color:var(--rose2)">✗</span>':'<span style="color:var(--warning)">⏳</span>';
   const isAdmin=currentUser&&currentUser.role==='admin';
+
+  // ── Tabla Inventario ── (renderiza independiente de movimientos)
   const tbi=document.getElementById('tb-inv');
-  if(!inv.length){tbi.innerHTML=`<tr><td colspan="12"><div class="empty-state"><div class="big">📱</div><p>Sin equipos registrados</p></div></td></tr>`;return;}
-  tbi.innerHTML=inv.map((r,i)=>`<tr class="${r.fresh?'nr':''}">
-    <td style="color:var(--muted);font-size:10px;font-family:'JetBrains Mono',monospace">${inv.length-i}</td>
-    <td>${r.photoUrl?`<img src="${r.photoUrl}" class="pt" onerror="this.style.display='none'">`:r.photoLocal?`<img src="${r.photoLocal}" class="pt">`:'—'}</td>
-    <td><span class="store-tag">${r.store||'—'}</span></td>
-    <td class="imei-c">${r.imei1}</td>
-    <td style="font-size:12px">${r.brand||'—'}</td>
-    <td style="font-size:12px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.model||''}">${r.model||'—'}</td>
-    <td style="font-size:11px">${r.color||'—'}</td>
-    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.storage||'—'}</td>
-    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.price?'$'+parseFloat(r.price).toFixed(2):'—'}</td>
-    <td><span class="${(String(r.stock)==='1'||r.stock===1)?'s1':'s0'}">${(String(r.stock)==='1'||r.stock===1)?'✓ Disp':'✗ Baja'}</span></td>
-    <td>${si(r.syncStatus)}</td>
-    ${isAdmin?`<td><button class="del-btn" onclick="openDeleteModal('${r.imei1}')">🗑 Eliminar</button></td>`:''}
-  </tr>`).join('');
-  inv.forEach(r=>r.fresh=false);
+  if(!inv.length){
+    tbi.innerHTML=`<tr><td colspan="12"><div class="empty-state"><div class="big">📱</div><p>Sin equipos registrados</p></div></td></tr>`;
+  } else {
+    tbi.innerHTML=inv.map((r,i)=>`<tr class="${r.fresh?'nr':''}">
+      <td style="color:var(--muted);font-size:10px;font-family:'JetBrains Mono',monospace">${inv.length-i}</td>
+      <td>${r.photoUrl?`<img src="${r.photoUrl}" class="pt" onerror="this.style.display='none'">`:r.photoLocal?`<img src="${r.photoLocal}" class="pt">`:'—'}</td>
+      <td><span class="store-tag">${r.store||'—'}</span></td>
+      <td class="imei-c">${r.imei1}</td>
+      <td style="font-size:12px">${r.brand||'—'}</td>
+      <td style="font-size:12px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.model||''}">${r.model||'—'}</td>
+      <td style="font-size:11px">${r.color||'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.storage||'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.price?'$'+parseFloat(r.price).toFixed(2):'—'}</td>
+      <td><span class="${(String(r.stock)==='1'||r.stock===1)?'s1':'s0'}">${(String(r.stock)==='1'||r.stock===1)?'✓ Disp':'✗ Baja'}</span></td>
+      <td>${si(r.syncStatus)}</td>
+      ${isAdmin?`<td><button class="del-btn" onclick="openDeleteModal('${r.imei1}')">🗑 Eliminar</button></td>`:''}
+    </tr>`).join('');
+    inv.forEach(r=>r.fresh=false);
+  }
+
+  // ── Tabla Movimientos ── (renderiza SIEMPRE, independiente de inventario)
   const tbm=document.getElementById('tb-mov');
   const fStore=document.getElementById('f-store')?.value||'';
   const fType=document.getElementById('f-type')?.value||'';
   let fm=mov;
   if(fStore)fm=fm.filter(r=>r.store===fStore);
   if(fType)fm=fm.filter(r=>r.type&&r.type.includes(fType));
-  if(!fm.length){tbm.innerHTML=`<tr><td colspan="12"><div class="empty-state"><div class="big">📋</div><p>Sin movimientos</p></div></td></tr>`;updateQueueBar();return;}
-  tbm.innerHTML=fm.map((r,i)=>`<tr>
-    <td style="color:var(--muted);font-size:10px;font-family:'JetBrains Mono',monospace">${fm.length-i}</td>
-    <td><span class="store-tag">${r.store||'—'}</span></td>
-    <td><span class="${r.type&&r.type.includes('ENTRADA')?'badge-in':'badge-out'}">${r.type&&r.type.includes('ENTRADA')?'✅ ENTRADA':'🔴 SALIDA'}</span></td>
-    <td class="imei-c">${r.imei1||'—'}</td>
-    <td style="font-size:12px">${r.brand||'—'}</td>
-    <td style="font-size:12px">${r.model||'—'}</td>
-    <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.price?'$'+parseFloat(r.price).toFixed(2):'—'}</td>
-    <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${r.salePrice?'var(--success)':'var(--muted)'}">${r.salePrice?'$'+parseFloat(r.salePrice).toFixed(2):'—'}</td>
-    <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${r.date||'—'}</td>
-    <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${r.time||'—'}</td>
-    <td style="font-size:11px;color:var(--muted)">${r.notes||'—'}</td>
-    ${isAdmin?`<td><button class="del-btn" onclick="openDeleteMovModal(${mov.indexOf(r)})">🗑</button></td>`:''}
-  </tr>`).join('');
+  if(!fm.length){
+    tbm.innerHTML=`<tr><td colspan="12"><div class="empty-state"><div class="big">📋</div><p>Sin movimientos</p></div></td></tr>`;
+  } else {
+    tbm.innerHTML=fm.map((r,i)=>`<tr>
+      <td style="color:var(--muted);font-size:10px;font-family:'JetBrains Mono',monospace">${fm.length-i}</td>
+      <td><span class="store-tag">${r.store||'—'}</span></td>
+      <td><span class="${r.type&&r.type.includes('ENTRADA')?'badge-in':'badge-out'}">${r.type&&r.type.includes('ENTRADA')?'✅ ENTRADA':'🔴 SALIDA'}</span></td>
+      <td class="imei-c">${r.imei1||'—'}</td>
+      <td style="font-size:12px">${r.brand||'—'}</td>
+      <td style="font-size:12px">${r.model||'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.price?'$'+parseFloat(r.price).toFixed(2):'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${r.salePrice?'var(--success)':'var(--muted)'}">${r.salePrice?'$'+parseFloat(r.salePrice).toFixed(2):'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${r.date||'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${r.time||'—'}</td>
+      <td style="font-size:11px;color:var(--muted)">${r.notes||'—'}</td>
+      ${isAdmin?`<td><button class="del-btn" onclick="openDeleteMovModal(${mov.indexOf(r)})">🗑</button></td>`:''}
+    </tr>`).join('');
+  }
   updateQueueBar();
 }
 function showTab(t){
@@ -1389,9 +1397,14 @@ function showTab(t){
     document.getElementById('tab-'+x)?.classList.toggle('active',x===t);
     const el=document.getElementById('tw-'+x);if(el)el.style.display=x===t?'block':'none';
   });
+  // Al cambiar a cualquier pestaña: renderizar con datos en memoria PRIMERO
+  // luego recargar desde Sheets para tener info fresca
   if(t==='rep'){
-    renderReports(); // render inmediato con datos en memoria
-    loadFromSheets().then(()=>renderReports()); // luego refresca desde Sheets
+    renderReports();
+    loadFromSheets().then(()=>renderReports());
+  } else if(t==='inv'||t==='mov'){
+    renderTables();
+    loadFromSheets();
   }
 }
 
@@ -1902,8 +1915,12 @@ if(scriptUrl)document.getElementById('url-inp').value=scriptUrl;
 try{if(LS.getItem('inv_v5')){LS.removeItem('inv_v5');LS.removeItem('mov_v5');}}catch(e){}
 if(currentUser&&scriptUrl&&scriptUrl.includes('/exec')){
   showApp();
+  renderTables(); // render inmediato con lo que hay en localStorage
+  updateStats();
   loadFromSheets().then(()=>{
-    initSeenMovs(); // snapshot de movimientos existentes ANTES de empezar polling
+    renderTables();
+    updateStats();
+    initSeenMovs();
     startNotifPolling();
   });
 }
