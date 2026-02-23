@@ -548,7 +548,8 @@ tr.nr td{animation:rowIn .5s ease;}
           <button class="tab-btn" id="tab-rep" onclick="showTab('rep')">📊 Reportes</button>
         </div>
         <div class="tbl-actions">
-          <button class="btn btn-outline" onclick="loadFromSheets()" style="padding:7px 11px;font-size:12px" title="Sincronizar con Sheets">↻ Sync</button>
+          <button class="btn btn-outline" onclick="forceSyncFromSheets()" style="padding:7px 11px;font-size:12px" title="Recargar todos los datos desde Google Sheets">↻ Sync</button>
+          <button class="btn btn-primary" id="btn-bulk" onclick="openBulkModal()" style="padding:7px 11px;font-size:12px;display:none" title="Carga masiva desde Excel">📊 Excel</button>
           <button class="btn btn-success" onclick="exportCSV()" style="padding:7px 11px;font-size:12px">⬇ CSV</button>
           <button class="btn btn-danger" onclick="openClearModal()" style="padding:7px 11px;font-size:12px">🗑</button>
         </div>
@@ -573,7 +574,13 @@ tr.nr td{animation:rowIn .5s ease;}
       </div>
 
       <!-- REPORTS -->
-      <div id="tw-rep" style="display:none"><div class="rep-wrap" id="rep-content"></div></div>
+      <div id="tw-rep" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px 0">
+          <span style="font-size:11px;color:var(--muted)" id="rep-sync-info">Toca 🔄 para sincronizar</span>
+          <button class="btn btn-outline" onclick="loadFromSheets().then(()=>renderReports())" style="padding:6px 12px;font-size:12px">🔄 Actualizar</button>
+        </div>
+        <div class="rep-wrap" id="rep-content"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -592,22 +599,57 @@ tr.nr td{animation:rowIn .5s ease;}
 
 <!-- MODAL INGRESO MASIVO EXCEL -->
 <div class="modal-overlay" id="modal-bulk">
-  <div class="modal" style="max-width:480px">
-    <h3>📊 Ingreso Masivo desde Excel</h3>
-    <p style="font-size:12px;margin-bottom:6px">Selecciona un archivo <strong>.xlsx</strong> o <strong>.csv</strong> con columnas:<br>
-    <code style="font-size:10px;background:var(--bg);padding:2px 6px;border-radius:4px">IMEI1, IMEI2, Serial, Marca, Modelo, Color, GB, Precio, Estado, Notas</code></p>
-    <div id="bulk-drop" style="border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;cursor:pointer;margin:12px 0;transition:border-color .2s" onclick="document.getElementById('bulk-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--purple2)'" ondragleave="this.style.borderColor='var(--border)'" ondrop="onBulkDrop(event)">
-      <div style="font-size:28px;margin-bottom:8px">📂</div>
-      <div style="font-size:13px;color:var(--muted)">Arrastra tu Excel aquí o toca para seleccionar</div>
-      <div id="bulk-file-name" style="font-size:11px;color:var(--purple3);margin-top:6px"></div>
+  <div class="modal" style="max-width:520px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h3 style="font-size:17px">📊 Carga Masiva de Inventario</h3>
+      <button onclick="closeModal('modal-bulk')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+    </div>
+
+    <!-- Paso 1: Plantilla -->
+    <div style="background:var(--success-bg);border:1px solid rgba(42,122,74,.2);border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--success);margin-bottom:2px">📥 Paso 1 — Descarga la plantilla</div>
+        <div style="font-size:11px;color:var(--muted)">Columnas: IMEI1, IMEI2, Serial, Marca, Modelo, Color, GB, Precio, Estado, Tienda, Notas</div>
+      </div>
+      <button class="btn btn-success" onclick="downloadTemplate()" style="padding:7px 12px;font-size:12px;flex-shrink:0">⬇ Plantilla</button>
+    </div>
+
+    <!-- Paso 2: Subir archivo -->
+    <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">📂 Paso 2 — Sube tu archivo</div>
+    <div id="bulk-drop" style="border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;cursor:pointer;margin-bottom:12px;transition:all .2s" onclick="document.getElementById('bulk-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--purple2)';this.style.background='rgba(124,92,191,.04)'" ondragleave="this.style.borderColor='var(--border)';this.style.background=''" ondrop="onBulkDrop(event)">
+      <div style="font-size:32px;margin-bottom:8px">📂</div>
+      <div style="font-size:13px;color:var(--text);font-weight:600">Arrastra tu Excel aquí</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">o toca para seleccionar · .xlsx · .xls · .csv</div>
+      <div id="bulk-file-name" style="font-size:12px;color:var(--purple3);margin-top:8px;font-weight:600"></div>
     </div>
     <input type="file" id="bulk-file" accept=".xlsx,.csv,.xls" onchange="onBulkFile(event)" style="display:none">
-    <div id="bulk-preview" style="display:none;max-height:160px;overflow-y:auto;margin:8px 0;border-radius:8px;border:1px solid var(--border)">
-      <table style="width:100%;font-size:11px"><thead id="bulk-thead"></thead><tbody id="bulk-tbody"></tbody></table>
+
+    <!-- Preview tabla -->
+    <div id="bulk-preview" style="display:none;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">👁 Vista previa (primeras 8 filas)</div>
+      <div style="overflow-x:auto;max-height:180px;overflow-y:auto;border-radius:8px;border:1px solid var(--border)">
+        <table style="width:100%;font-size:11px;border-collapse:collapse"><thead id="bulk-thead"></thead><tbody id="bulk-tbody"></tbody></table>
+      </div>
     </div>
-    <div id="bulk-status" style="font-size:12px;color:var(--muted);min-height:20px;margin-bottom:8px"></div>
+
+    <!-- Status y progreso -->
+    <div id="bulk-status" style="font-size:12px;color:var(--muted);min-height:18px;margin-bottom:10px"></div>
+    <div id="bulk-progress-wrap" style="display:none;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px">
+        <span>Importando...</span>
+        <span id="bulk-progress-txt">0%</span>
+      </div>
+      <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div id="bulk-progress-bar" style="height:100%;background:var(--grad-purple);border-radius:3px;transition:width .3s;width:0%"></div>
+      </div>
+      <div id="bulk-progress-detail" style="font-size:11px;color:var(--muted);margin-top:5px;text-align:center"></div>
+    </div>
+
+    <!-- Resultado final -->
+    <div id="bulk-result" style="display:none;padding:12px 14px;border-radius:10px;margin-bottom:12px;font-size:13px;font-weight:600"></div>
+
     <div class="modal-btns">
-      <button class="btn btn-outline" onclick="closeModal('modal-bulk')">Cancelar</button>
+      <button class="btn btn-outline" id="bulk-cancel-btn" onclick="closeModal('modal-bulk')">Cancelar</button>
       <button class="btn btn-primary" id="bulk-import-btn" onclick="doBulkImport()" disabled>✅ Importar registros</button>
     </div>
   </div>
@@ -677,6 +719,14 @@ const USERS={
 let inv=(()=>{try{return JSON.parse(LS.getItem('inv_v6')||'[]');}catch(e){return [];}})();
 let mov=(()=>{try{return JSON.parse(LS.getItem('mov_v6')||'[]');}catch(e){return [];}})();
 let scriptUrl=(()=>{try{return LS.getItem('imei_url_v6')||'';}catch(e){return '';}})();
+
+// Helper: valida que la URL exista y parezca un endpoint válido
+function isValidUrl(url){
+  if(!url || typeof url!=='string' || url.trim()==='') return false;
+  const u = url.trim();
+  // Acepta cualquier URL que termine en /exec o contenga script.google.com
+  return u.startsWith('http') && (u.includes('/exec') || u.includes('google'));
+}
 let currentUser=(()=>{try{return JSON.parse(LS.getItem('imei_user')||'null');}catch(e){return null;}})();
 let mode='entry',scannerRunning=false,currentStep=1,scanLocked=false,detBuf=[];
 let sv={imei1:'',imei2:'',serial:''};
@@ -751,7 +801,7 @@ function showApp(){
   if(thDelMov) thDelMov.style.display=currentUser.role==='admin'?'':'none';
   if(!isLeader) setMode('entry');
   const btnBulk=document.getElementById('btn-bulk');
-  if(btnBulk) btnBulk.style.display=(isAdmin||currentUser.role==='store')?'':'none';
+  if(btnBulk) btnBulk.style.display=isAdmin?'inline-flex':'none';
 }
 function logout(){
   currentUser=null;try{LS.removeItem('imei_user');}catch(e){}stopNotifPolling();
@@ -839,25 +889,68 @@ document.addEventListener('click',function(e){
 });
 
 // ─── LOAD FROM SHEETS ───
+// Forzar recarga completa desde Sheets (limpia caché local y recarga)
+async function forceSyncFromSheets(){
+  if(!isValidUrl(scriptUrl)){
+    showFb('⚠ Configura primero la URL del Apps Script','error');
+    return;
+  }
+  showFb('⟳ Recargando desde Google Sheets...','pending');
+  inv=[];mov=[];
+  saveData();
+  await loadFromSheets();
+  initSeenMovs();
+  showFb('✅ Datos recargados desde Sheets','success',3000);
+}
+
 async function loadFromSheets(){
-  if(!scriptUrl||!currentUser)return;
+  if(!isValidUrl(scriptUrl)||!currentUser)return;
   setSP('send','⟳ Cargando...');
   try{
-    // Tiendas solo ven sus propios datos; admin y lider ven todo
     const roleParam=(currentUser.role==='admin'||currentUser.role==='leader')?'admin':'store';
     const storeParam=(currentUser.role==='store'&&currentUser.store)?currentUser.store:'';
-    const url=scriptUrl+'?action=get_data&role='+encodeURIComponent(roleParam)+'&store='+encodeURIComponent(storeParam)+'&ts='+Date.now();
-    const res=await fetch(url);
-    const data=await res.json();
+    // NO usar cache: Apps Script GET puede devolver respuesta cacheada vacía
+    const url=scriptUrl+'?action=get_data&role='+encodeURIComponent(roleParam)+'&store='+encodeURIComponent(storeParam);
+    const res=await fetch(url,{
+      method:'GET',
+      cache:'no-store',
+      headers:{'Cache-Control':'no-cache'}
+    });
+    const text=await res.text();
+    let data;
+    try{ data=JSON.parse(text); }
+    catch(parseErr){
+      setSP('err','✗ Respuesta inválida del servidor');
+      console.warn('Apps Script response (not JSON):', text.substring(0,200));
+      return;
+    }
     if(data.success){
-      inv=data.inventory.map(r=>({...r,syncStatus:'synced',fresh:false}));
-      // Filtro extra cliente: tienda solo ve SUS movimientos
-      const rawMov=data.movements.map((r,i)=>({...r,id:i}));
-      mov=(currentUser.role==='store')?rawMov.filter(r=>r.store===currentUser.store):rawMov;
-      saveData();renderTables();updateStats();
-      setSP('ok','✓ Sincronizado');
-    } else setSP('err','✗ '+data.error);
-  }catch(e){setSP('err','✗ Error de red');console.error(e);}
+      const rawInv=data.inventory||[];
+      const rawMov=data.movements||[];
+      // Filtro extra cliente: tienda solo ve SUS movimientos e inventario
+      if(currentUser.role==='store'){
+        inv=rawInv
+          .filter(r=>r.store===currentUser.store)
+          .map(r=>({...r,syncStatus:'synced',fresh:false}));
+        mov=rawMov
+          .filter(r=>r.store===currentUser.store)
+          .map((r,i)=>({...r,id:i}));
+      } else {
+        inv=rawInv.map(r=>({...r,syncStatus:'synced',fresh:false}));
+        mov=rawMov.map((r,i)=>({...r,id:i}));
+      }
+      saveData();
+      renderTables();
+      updateStats();
+      if(curTab==='rep') renderReports();
+      setSP('ok','✓ Sincronizado · '+inv.length+' equipos · '+mov.length+' mov');
+    } else {
+      setSP('err','✗ '+(data.error||'Sin datos'));
+      console.warn('getData error:', data.error);
+    }
+  }catch(e){
+    setSP('err','✗ Error de red');
+  }
 }
 
 // ─── MODE ───
@@ -1169,7 +1262,7 @@ async function confirmExit(){
   const m={type:'SALIDA',store:currentUser.store||'Admin',imei1,brand:item.brand,model:item.model,color:item.color,storage:item.storage,price:item.price,salePrice,status:item.status,date,time,notes};
   mov.unshift(m);saveData();renderTables();updateStats();
   showFb('📤 Registrando salida en Sheets...','pending');
-  if(scriptUrl){
+  if(isValidUrl(scriptUrl)){
     try{
       const res=await fetch(scriptUrl,{method:'POST',body:JSON.stringify({action:'exit',imei1,store:currentUser.store||'Admin',role:currentUser.role,date,time,notes,salePrice}),headers:{'Content-Type':'text/plain'}});
       const text=await res.text();
@@ -1189,7 +1282,7 @@ function saveData(){
   try{LS.setItem('inv_v6',JSON.stringify(inv.map(r=>({...r,photoLocal:null}))));LS.setItem('mov_v6',JSON.stringify(mov));}catch(e){}
 }
 async function syncEntry(row){
-  if(!scriptUrl){row.syncStatus='pending';saveData();updateQueueBar();return;}
+  if(!isValidUrl(scriptUrl)){row.syncStatus='pending';saveData();updateQueueBar();return;}
   row.syncStatus='sending';renderTables();
   try{
     const p={action:'entry',...row,photoLocal:undefined,photoUrl:row.photoUrl||''};
@@ -1202,7 +1295,7 @@ async function syncEntry(row){
   saveData();renderTables();updateQueueBar();
 }
 async function uploadPhoto(row){
-  if(!row.photoLocal||!scriptUrl)return;
+  if(!row.photoLocal||!isValidUrl(scriptUrl))return;
   const sizeKB=Math.round(row.photoLocal.length*0.75/1024);
   if(sizeKB>1500){showFb('⚠ Foto muy grande ('+sizeKB+'KB).','error');return;}
   try{
@@ -1236,6 +1329,15 @@ function updateStats(){
   document.getElementById('cnt-stock').textContent=s;
   document.getElementById('cnt-out').textContent=o;
   document.getElementById('cnt-total').textContent=t;
+  // Actualizar subtítulo del topbar con info de sincronización
+  const subEl=document.getElementById('topbar-sub');
+  if(subEl){
+    if(inv.length>0||mov.length>0){
+      subEl.textContent=currentUser&&currentUser.role==='admin'
+        ?'Vista global — todas las tiendas'
+        :(currentUser&&currentUser.store?currentUser.store:'');
+    }
+  }
 }
 function renderTables(){
   updateStats();
@@ -1287,7 +1389,10 @@ function showTab(t){
     document.getElementById('tab-'+x)?.classList.toggle('active',x===t);
     const el=document.getElementById('tw-'+x);if(el)el.style.display=x===t?'block':'none';
   });
-  if(t==='rep')loadFromSheets().then(()=>renderReports());
+  if(t==='rep'){
+    renderReports(); // render inmediato con datos en memoria
+    loadFromSheets().then(()=>renderReports()); // luego refresca desde Sheets
+  }
 }
 
 // ─── REPORTS ─── (con valor en dinero por tienda)
@@ -1351,6 +1456,13 @@ function renderReports(){
   });
   html+='</div>';
   document.getElementById('rep-content').innerHTML=html;
+  // Actualizar timestamp de última sincronización
+  const repSyncEl=document.getElementById('rep-sync-info');
+  if(repSyncEl){
+    const now=new Date();
+    const hm=now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    repSyncEl.textContent='Última actualización: '+hm+' · '+inv.length+' equipos · '+mov.length+' movimientos';
+  }
 }
 
 function resetAll(){
@@ -1420,7 +1532,7 @@ async function confirmDelete(){
   if(idx>-1)inv.splice(idx,1);
   saveData();renderTables();updateStats();
   showFb('🗑 Eliminando de Sheets...','pending');
-  if(scriptUrl){
+  if(isValidUrl(scriptUrl)){
     try{
       const res=await fetch(scriptUrl,{method:'POST',body:JSON.stringify({action:'delete_imei',imei1,role:currentUser.role}),headers:{'Content-Type':'text/plain'}});
       const text=await res.text();
@@ -1449,7 +1561,7 @@ async function confirmDeleteMov(){
   pendingDeleteMovIdx=-1;
   saveData();renderTables();
   showFb('🗑 Eliminando movimiento de Sheets...','pending');
-  if(scriptUrl){
+  if(isValidUrl(scriptUrl)){
     try{
       const res=await fetch(scriptUrl,{method:'POST',body:JSON.stringify({action:'delete_mov',imei1:r.imei1,date:r.date,time:r.time,type:r.type,role:currentUser.role}),headers:{'Content-Type':'text/plain'}});
       const text=await res.text();
@@ -1461,79 +1573,244 @@ async function confirmDeleteMov(){
 
 // ─── BULK IMPORT ───
 let bulkRows=[];
-function openBulkModal(){document.getElementById('modal-bulk').classList.add('open');}
-function onBulkDrop(e){e.preventDefault();e.currentTarget.style.borderColor='var(--border)';const f=e.dataTransfer.files[0];if(f)processBulkFile(f);}
+let bulkImporting=false;
+
+function openBulkModal(){
+  // Reset estado del modal
+  bulkRows=[];
+  document.getElementById('bulk-file').value='';
+  document.getElementById('bulk-file-name').textContent='';
+  document.getElementById('bulk-preview').style.display='none';
+  document.getElementById('bulk-status').textContent='';
+  document.getElementById('bulk-progress-wrap').style.display='none';
+  document.getElementById('bulk-result').style.display='none';
+  document.getElementById('bulk-import-btn').disabled=true;
+  document.getElementById('bulk-import-btn').style.display='';
+  document.getElementById('bulk-cancel-btn').textContent='Cancelar';
+  document.getElementById('bulk-drop').style.display='';
+  document.getElementById('modal-bulk').classList.add('open');
+}
+
+function downloadTemplate(){
+  // Crear plantilla Excel con columnas correctas y 3 filas de ejemplo
+  const ws_data = [
+    ['IMEI1','IMEI2','Serial','Marca','Modelo','Color','GB','Precio','Estado','Tienda','Notas'],
+    ['351234567890123','351234567890124','SN123456','Apple','iPhone 13','Negro','128GB','15000','Seminuevo','Tienda 1','Buen estado'],
+    ['352345678901234','','SN234567','Samsung','Galaxy S23','Blanco','256GB','12000','Nuevo','Tienda 2',''],
+    ['353456789012345','','SN345678','Xiaomi','Redmi Note 13','Azul','128GB','6500','Reacondicionado','Tienda 1','Batería al 90%'],
+  ];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(ws_data);
+  // Ancho de columnas
+  ws['!cols'] = [{wch:18},{wch:18},{wch:14},{wch:12},{wch:20},{wch:12},{wch:8},{wch:10},{wch:15},{wch:12},{wch:25}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
+  XLSX.writeFile(wb, 'plantilla_anicode_pro.xlsx');
+}
+
+function onBulkDrop(e){
+  e.preventDefault();
+  e.currentTarget.style.borderColor='var(--border)';
+  e.currentTarget.style.background='';
+  const f=e.dataTransfer.files[0];
+  if(f)processBulkFile(f);
+}
 function onBulkFile(e){const f=e.target.files[0];if(f)processBulkFile(f);}
+
 function processBulkFile(file){
-  document.getElementById('bulk-file-name').textContent=file.name;
+  document.getElementById('bulk-file-name').textContent='⏳ Leyendo '+file.name+'...';
+  document.getElementById('bulk-status').textContent='';
+  document.getElementById('bulk-result').style.display='none';
   const reader=new FileReader();
-  reader.onload=function(e){
-    const data=new Uint8Array(e.target.result);
+  reader.onload=function(ev){
+    const data=new Uint8Array(ev.target.result);
     let rows=[];
     if(file.name.toLowerCase().endsWith('.csv')){
       const text=new TextDecoder('utf-8').decode(data);
       rows=parseCSV(text);
     } else {
-      try{const wb=XLSX.read(data,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];rows=XLSX.utils.sheet_to_json(ws,{defval:''});}
-      catch(ex){showFb('⚠ Error leyendo Excel: '+ex.message,'error');return;}
+      try{
+        const wb=XLSX.read(data,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+      }catch(ex){
+        document.getElementById('bulk-status').textContent='❌ Error leyendo archivo: '+ex.message;
+        document.getElementById('bulk-file-name').textContent='';
+        return;
+      }
     }
-    if(!rows.length){showFb('⚠ No se encontraron filas','error');return;}
-    bulkRows=rows.map(r=>normalizeBulkRow(r)).filter(r=>r.imei1&&r.imei1.length>=14);
-    renderBulkPreview();
+    if(!rows.length){
+      document.getElementById('bulk-status').textContent='❌ No se encontraron filas en el archivo';
+      document.getElementById('bulk-file-name').textContent='';
+      return;
+    }
+    const allRows=rows.map(r=>normalizeBulkRow(r));
+    const validRows=allRows.filter(r=>r.imei1&&r.imei1.length>=14);
+    const invalidCount=allRows.length-validRows.length;
+    bulkRows=validRows;
+    document.getElementById('bulk-file-name').textContent='✅ '+file.name;
+    renderBulkPreview(invalidCount);
   };
   reader.readAsArrayBuffer(file);
 }
+
 function normalizeBulkRow(r){
-  const g=(keys)=>{for(const k of keys){for(const rk of Object.keys(r)){if(rk.toLowerCase().replace(/[_ ]/g,'')===k.toLowerCase().replace(/[_ ]/g,'')){return String(r[rk]||'').trim();}}}return '';};
-  return {imei1:g(['imei1','imei','imei_1']),imei2:g(['imei2','imei_2']),serial:g(['serial','serialnumber']),brand:g(['marca','brand']),model:g(['modelo','model']),color:g(['color']),storage:g(['gb','storage','almacenamiento']),price:g(['precio','price']),status:g(['estado','status'])||'Nuevo',notes:g(['notas','notes'])};
+  const g=(keys)=>{
+    for(const k of keys){
+      for(const rk of Object.keys(r)){
+        if(rk.toLowerCase().replace(/[_\s]/g,'')===k.toLowerCase().replace(/[_\s]/g,'')){
+          return String(r[rk]||'').trim();
+        }
+      }
+    }
+    return '';
+  };
+  return {
+    imei1:   g(['imei1','imei','imei_1','imei 1']),
+    imei2:   g(['imei2','imei_2','imei 2']),
+    serial:  g(['serial','serialnumber','numero_serie','no serie']),
+    brand:   g(['marca','brand']),
+    model:   g(['modelo','model']),
+    color:   g(['color']),
+    storage: g(['gb','storage','almacenamiento','capacidad']),
+    price:   g(['precio','price','costo']),
+    status:  g(['estado','status','condicion'])||'Nuevo',
+    store:   g(['tienda','store','sucursal']),
+    notes:   g(['notas','notes','observaciones','comentarios']),
+  };
 }
+
 function parseCSV(text){
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   if(lines.length<2)return [];
-  const headers=lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
-  return lines.slice(1).map(line=>{const vals=line.split(',').map(v=>v.replace(/"/g,'').trim());const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||'');return obj;});
+  const sep=lines[0].includes(';')?';':',';
+  const headers=lines[0].split(sep).map(h=>h.replace(/"/g,'').trim());
+  return lines.slice(1).map(line=>{
+    const vals=line.split(sep).map(v=>v.replace(/"/g,'').trim());
+    const obj={};
+    headers.forEach((h,i)=>obj[h]=vals[i]||'');
+    return obj;
+  });
 }
-function renderBulkPreview(){
-  if(!bulkRows.length){document.getElementById('bulk-status').textContent='No se encontraron filas con IMEI válido';document.getElementById('bulk-import-btn').disabled=true;return;}
-  const cols=['imei1','imei2','brand','model','color','storage','price'];
-  document.getElementById('bulk-thead').innerHTML='<tr>'+cols.map(c=>'<th style="padding:6px 8px;background:var(--surface2);color:var(--muted);font-size:10px">'+c+'</th>').join('')+'</tr>';
-  document.getElementById('bulk-tbody').innerHTML=bulkRows.slice(0,8).map(r=>'<tr>'+cols.map(c=>'<td style="padding:5px 8px;font-size:11px">'+String(r[c]||'—')+'</td>').join('')+'</tr>').join('');
+
+function renderBulkPreview(invalidCount){
+  if(!bulkRows.length){
+    document.getElementById('bulk-status').textContent='❌ No se encontraron filas con IMEI válido (mínimo 14 dígitos)';
+    document.getElementById('bulk-import-btn').disabled=true;
+    return;
+  }
+  const cols=['imei1','brand','model','color','storage','price','status','store'];
+  const colLabels={'imei1':'IMEI1','brand':'Marca','model':'Modelo','color':'Color','storage':'GB','price':'Precio','status':'Estado','store':'Tienda'};
+  document.getElementById('bulk-thead').innerHTML='<tr>'+cols.map(c=>`<th style="padding:6px 8px;background:var(--surface2);color:var(--muted);font-size:10px;white-space:nowrap">${colLabels[c]||c}</th>`).join('')+'</tr>';
+  document.getElementById('bulk-tbody').innerHTML=bulkRows.slice(0,8).map(r=>
+    '<tr>'+cols.map(c=>`<td style="padding:5px 8px;font-size:11px;border-bottom:1px solid var(--border)">${r[c]||'<span style=color:var(--muted)>—</span>'}</td>`).join('')+'</tr>'
+  ).join('');
   document.getElementById('bulk-preview').style.display='block';
-  document.getElementById('bulk-status').textContent='✅ '+bulkRows.length+' equipos listos para importar';
-  document.getElementById('bulk-import-btn').disabled=false;
+
+  // Contar duplicados para info
+  const dupCount=bulkRows.filter(r=>{
+    const ex=inv.find(x=>String(x.imei1).trim()===r.imei1);
+    return ex&&(String(ex.stock)==='1'||ex.stock===1);
+  }).length;
+  const newCount=bulkRows.length-dupCount;
+
+  let statusHtml=`<span style="color:var(--success);font-weight:700">✅ ${bulkRows.length} equipos detectados</span>`;
+  if(newCount>0) statusHtml+=` · <span style="color:var(--purple3)">${newCount} nuevos</span>`;
+  if(dupCount>0) statusHtml+=` · <span style="color:var(--warning)">${dupCount} ya en stock (se omitirán)</span>`;
+  if(invalidCount>0) statusHtml+=` · <span style="color:var(--rose2)">${invalidCount} filas inválidas ignoradas</span>`;
+  document.getElementById('bulk-status').innerHTML=statusHtml;
+  document.getElementById('bulk-import-btn').disabled=newCount===0;
 }
+
 async function doBulkImport(){
-  if(!bulkRows.length)return;
-  closeModal('modal-bulk');
-  const total=bulkRows.length;let ok=0,dup=0,err=0;
+  if(!bulkRows.length||bulkImporting)return;
+  bulkImporting=true;
+
+  // Preparar UI para importación
+  document.getElementById('bulk-import-btn').style.display='none';
+  document.getElementById('bulk-cancel-btn').textContent='Cerrar';
+  document.getElementById('bulk-drop').style.display='none';
+  document.getElementById('bulk-preview').style.display='none';
+  document.getElementById('bulk-progress-wrap').style.display='block';
+  document.getElementById('bulk-result').style.display='none';
+
+  const rowsToImport=bulkRows.filter(r=>{
+    const ex=inv.find(x=>String(x.imei1).trim()===r.imei1);
+    return !(ex&&(String(ex.stock)==='1'||ex.stock===1));
+  });
+  const total=rowsToImport.length;
+  const dup=bulkRows.length-total;
+  let ok=0,err=0;
+
   const now=new Date();
   const date=now.toLocaleDateString('es-MX');
   const time=now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  for(let i=0;i<bulkRows.length;i++){
-    const r=bulkRows[i];
-    showFb('📊 Importando '+(i+1)+'/'+total+': '+r.imei1,'pending');
-    const existing=inv.find(ex=>String(ex.imei1).trim()===r.imei1);
-    if(existing&&(String(existing.stock)==='1'||existing.stock===1)){dup++;continue;}
+
+  for(let i=0;i<rowsToImport.length;i++){
+    const r=rowsToImport[i];
+    const pct=Math.round(((i+1)/total)*100);
+    document.getElementById('bulk-progress-bar').style.width=pct+'%';
+    document.getElementById('bulk-progress-txt').textContent=pct+'%';
+    document.getElementById('bulk-progress-detail').textContent=`(${i+1}/${total}) ${r.brand||''} ${r.model||''} · ${r.imei1}`;
+
+    // Determinar tienda: usar la del excel si existe, sino la del usuario actual
+    const rowStore=r.store||currentUser.store||'Admin';
     const platform=r.brand&&(r.brand.toLowerCase().includes('apple')||r.brand.toLowerCase().includes('iphone'))?'iOS':'Android';
-    const row={imei1:r.imei1,imei2:r.imei2||'',serial:r.serial||'',platform,brand:r.brand||'',model:r.model||'',color:r.color||'',storage:r.storage||'',price:r.price||'',status:r.status||'Nuevo',notes:r.notes||'',date,time,store:currentUser.store||'Admin',photoLocal:null,photoUrl:'',stock:'1',syncStatus:'pending',fresh:true};
+    const row={
+      imei1:r.imei1,imei2:r.imei2||'',serial:r.serial||'',
+      platform,brand:r.brand||'',model:r.model||'',
+      color:r.color||'',storage:r.storage||'',price:r.price||'',
+      status:r.status||'Nuevo',notes:r.notes||'Carga masiva',
+      date,time,store:rowStore,
+      photoLocal:null,photoUrl:'',stock:'1',
+      syncStatus:'pending',fresh:true
+    };
     inv.unshift(row);
-    const m={type:'ENTRADA',store:row.store,imei1:row.imei1,brand:row.brand,model:row.model,color:row.color,storage:row.storage,price:row.price,status:row.status,date,time,notes:'Ingreso masivo'};
-    mov.unshift(m);ok++;
-    if(scriptUrl){
+    const m={type:'ENTRADA',store:rowStore,imei1:row.imei1,brand:row.brand,model:row.model,
+             color:row.color,storage:row.storage,price:row.price,status:row.status,
+             date,time,notes:'Carga masiva Excel'};
+    mov.unshift(m);
+
+    if(isValidUrl(scriptUrl)){
       try{
-        const res=await fetch(scriptUrl,{method:'POST',body:JSON.stringify({action:'entry',...row}),headers:{'Content-Type':'text/plain'}});
+        const res=await fetch(scriptUrl,{method:'POST',
+          body:JSON.stringify({action:'entry',...row}),
+          headers:{'Content-Type':'text/plain'}});
         const txt=await res.text();
         let d;try{d=JSON.parse(txt);}catch(ex){d={success:false};}
         row.syncStatus=d.success?'synced':'error';
+        if(d.success)ok++;else{err++;row.syncStatus='error';}
       }catch(ex){row.syncStatus='error';err++;}
+    } else {
+      row.syncStatus='pending';ok++;
     }
-    saveData();
-    if(i%5===0)renderTables();
-    await new Promise(r2=>setTimeout(r2,120));
+
+    if(i%3===0){saveData();renderTables();updateStats();}
+    await new Promise(resolve=>setTimeout(resolve,80));
   }
-  renderTables();
-  showFb('📊 Importación completa: '+ok+' guardados, '+dup+' duplicados omitidos'+(err?' '+err+' errores':''),'success',7000);
-  bulkRows=[];document.getElementById('bulk-file').value='';document.getElementById('bulk-file-name').textContent='';document.getElementById('bulk-preview').style.display='none';document.getElementById('bulk-import-btn').disabled=true;
+
+  saveData();renderTables();updateStats();
+  initSeenMovs(); // actualizar snapshot para no re-notificar estos movimientos
+
+  // Mostrar resultado
+  const resultEl=document.getElementById('bulk-result');
+  resultEl.style.display='block';
+  if(err===0){
+    resultEl.style.background='var(--success-bg)';
+    resultEl.style.border='1px solid rgba(42,122,74,.25)';
+    resultEl.style.color='var(--success)';
+    resultEl.innerHTML=`✅ Importación completada<br><span style="font-weight:400;font-size:12px">${ok} equipos registrados${dup?' · '+dup+' duplicados omitidos':''}</span>`;
+  } else {
+    resultEl.style.background='var(--warning-bg)';
+    resultEl.style.border='1px solid rgba(154,104,0,.25)';
+    resultEl.style.color='var(--warning)';
+    resultEl.innerHTML=`⚠️ Importación con errores<br><span style="font-weight:400;font-size:12px">${ok} guardados en Sheets · ${err} errores de red${dup?' · '+dup+' omitidos':''}</span>`;
+  }
+  document.getElementById('bulk-progress-detail').textContent='';
+  document.getElementById('bulk-progress-bar').style.width='100%';
+
+  bulkImporting=false;
+  bulkRows=[];
+  document.getElementById('bulk-file').value='';
 }
 
 // ─── POLLING NOTIFICACIONES ───
@@ -1555,7 +1832,7 @@ function startNotifPolling(){
   if(notifInterval)return;
   initSeenMovs();
   notifInterval=setInterval(async()=>{
-    if(!scriptUrl||!currentUser)return;
+    if(!isValidUrl(scriptUrl)||!currentUser)return;
     try{
       // Admin siempre obtiene todos los datos para detectar movimientos de cualquier tienda
       const url=scriptUrl+'?action=get_data&role=admin&store=&ts='+Date.now();
@@ -1595,9 +1872,15 @@ function startNotifPolling(){
 
         inv=freshInv;
         mov=filteredMov;
-        saveData();renderTables();
+        saveData();
+        renderTables();
+        updateStats();
+        if(curTab==='rep') renderReports();
       }
-    }catch(e){console.error('Polling error:',e);}
+    }catch(e){
+      // Silenciar errores de red (sin conexion, URL no configurada, etc.)
+      // No loguear en consola para no generar ruido
+    }
   },30000);
 }
 function stopNotifPolling(){
