@@ -843,12 +843,17 @@ async function loadFromSheets(){
   if(!scriptUrl||!currentUser)return;
   setSP('send','⟳ Cargando...');
   try{
-    const url=scriptUrl+'?action=get_data&role='+encodeURIComponent(currentUser.role==='leader'?'admin':currentUser.role)+'&store='+encodeURIComponent((currentUser.store&&currentUser.store!=='null')?currentUser.store:'');
+    // Tiendas solo ven sus propios datos; admin y lider ven todo
+    const roleParam=(currentUser.role==='admin'||currentUser.role==='leader')?'admin':'store';
+    const storeParam=(currentUser.role==='store'&&currentUser.store)?currentUser.store:'';
+    const url=scriptUrl+'?action=get_data&role='+encodeURIComponent(roleParam)+'&store='+encodeURIComponent(storeParam)+'&ts='+Date.now();
     const res=await fetch(url);
     const data=await res.json();
     if(data.success){
       inv=data.inventory.map(r=>({...r,syncStatus:'synced',fresh:false}));
-      mov=data.movements.map((r,i)=>({...r,id:i}));
+      // Filtro extra cliente: tienda solo ve SUS movimientos
+      const rawMov=data.movements.map((r,i)=>({...r,id:i}));
+      mov=(currentUser.role==='store')?rawMov.filter(r=>r.store===currentUser.store):rawMov;
       saveData();renderTables();updateStats();
       setSP('ok','✓ Sincronizado');
     } else setSP('err','✗ '+data.error);
@@ -1292,9 +1297,11 @@ function renderReports(){
   const dynStores=[...new Set([...baseStores,...inv.map(r=>r.store),...mov.map(r=>r.store)].filter(s=>s&&s!=='null'&&s!=='undefined'))].sort();
   const stores=dynStores.length?dynStores:baseStores;
 
+  // Fuente unica de verdad: tabla mov para entradas/salidas; inv para stock real
   const ts=inv.filter(r=>String(r.stock)==='1'||r.stock===1).length;
-  const to=inv.filter(r=>String(r.stock)==='0'||r.stock===0).length;
-  const te=mov.filter(r=>r.type&&r.type.includes('ENTRADA')).length;
+  const gEntradas=mov.filter(r=>r.type&&r.type.includes('ENTRADA')).length;
+  const gSalidas=mov.filter(r=>r.type&&r.type.includes('SALIDA')).length;
+  const gTotal=gEntradas+gSalidas; // mov.length puede tener otros tipos; sumamos explicitamente
 
   // Total global en dinero (stock activo)
   const globalMoney=inv
@@ -1305,9 +1312,9 @@ function renderReports(){
   <div class="rep-section-title">Resumen Global</div>
   <div class="rep-grid">
     <div class="stat-card"><div class="sc-val" style="color:var(--success)">${ts}</div><div class="sc-lbl">📦 En Stock</div></div>
-    <div class="stat-card"><div class="sc-val" style="color:var(--rose2)">${to}</div><div class="sc-lbl">🔴 Salidas</div></div>
-    <div class="stat-card"><div class="sc-val" style="color:var(--purple3)">${te}</div><div class="sc-lbl">✅ Entradas</div></div>
-    <div class="stat-card"><div class="sc-val" style="color:var(--warning)">${mov.length}</div><div class="sc-lbl">📋 Movimientos</div></div>
+    <div class="stat-card"><div class="sc-val" style="color:var(--rose2)">${gSalidas}</div><div class="sc-lbl">🔴 Salidas</div></div>
+    <div class="stat-card"><div class="sc-val" style="color:var(--purple3)">${gEntradas}</div><div class="sc-lbl">✅ Entradas</div></div>
+    <div class="stat-card"><div class="sc-val" style="color:var(--warning)">${gTotal}</div><div class="sc-lbl">📋 Movimientos</div></div>
   </div>
   <div class="global-money-card">
     <div class="global-money-val">${fmt$(globalMoney)}</div>
@@ -1526,48 +1533,80 @@ async function doBulkImport(){
   bulkRows=[];document.getElementById('bulk-file').value='';document.getElementById('bulk-file-name').textContent='';document.getElementById('bulk-preview').style.display='none';document.getElementById('bulk-import-btn').disabled=true;
 }
 
-// ─── POLLING NOTIFICACIONES ─── (mejorado con campana)
-let lastMovCount=0;
+// ─── POLLING NOTIFICACIONES ───
+// Usamos un Set de IDs para detectar movimientos NUEVOS sin importar el orden
+let seenMovIds=new Set();
 let notifInterval=null;
+
+function buildMovId(m){
+  // ID unico por movimiento: tienda+tipo+imei+fecha+hora
+  return [m.store,m.type,m.imei1,m.date,m.time].join('|');
+}
+
+function initSeenMovs(){
+  // Inicializar con los movimientos que ya existen al cargar
+  seenMovIds=new Set(mov.map(m=>buildMovId(m)));
+}
+
 function startNotifPolling(){
   if(notifInterval)return;
-  lastMovCount=mov.length;
+  initSeenMovs();
   notifInterval=setInterval(async()=>{
     if(!scriptUrl||!currentUser)return;
     try{
+      // Admin siempre obtiene todos los datos para detectar movimientos de cualquier tienda
       const url=scriptUrl+'?action=get_data&role=admin&store=&ts='+Date.now();
       const res=await fetch(url);
       const data=await res.json();
       if(!data.success)return;
-      const fresh=data.movements;
-      if(fresh.length>lastMovCount){
-        const newMov=fresh.slice(0,fresh.length-lastMovCount);
+
+      const freshMov=data.movements.map((r,i)=>({...r,id:i}));
+
+      // Detectar movimientos que NO habiamos visto antes
+      const newMov=freshMov.filter(m=>!seenMovIds.has(buildMovId(m)));
+
+      if(newMov.length>0){
         newMov.forEach(m=>{
-          // Notificar TODOS los movimientos al admin
+          const tienda=String(m.store||'').trim()||'Sin tienda';
+          const tipo=String(m.type||'').trim();
+          const brand=String(m.brand||'').trim();
+          const model=String(m.model||'').trim();
+
           if(currentUser.role==='admin'){
-            addNotification(m.store||'—',m.type||'MOVIMIENTO',m.brand||'',m.model||'');
-          } else if(m.store&&m.store!==(currentUser.store||'Admin')){
-            // Para tiendas: solo toast de otras tiendas (comportamiento original)
-            showMovNotif(m.store,m.type||'MOVIMIENTO',m.brand||'',m.model||'');
+            // Admin recibe notificacion de TODAS las tiendas con la tienda correcta
+            addNotification(tienda,tipo,brand,model);
+          } else if(tienda!==currentUser.store){
+            // Tienda: solo notificaciones de otras tiendas (informativo)
+            showMovNotif(tienda,tipo,brand,model);
           }
+          // Agregar al set para no volver a notificar
+          seenMovIds.add(buildMovId(m));
         });
-        inv=data.inventory.map(r=>({...r,syncStatus:'synced',fresh:false}));
-        mov=data.movements.map((r,i)=>({...r,id:i}));
+
+        // Actualizar datos locales con todos los datos frescos
+        const freshInv=data.inventory.map(r=>({...r,syncStatus:'synced',fresh:false}));
+        // Tiendas solo ven sus propios movimientos
+        const filteredMov=(currentUser.role==='store')
+          ?freshMov.filter(r=>r.store===currentUser.store)
+          :freshMov;
+
+        inv=freshInv;
+        mov=filteredMov;
         saveData();renderTables();
-        lastMovCount=fresh.length;
       }
-    }catch(e){}
+    }catch(e){console.error('Polling error:',e);}
   },30000);
 }
 function stopNotifPolling(){
   if(notifInterval){clearInterval(notifInterval);notifInterval=null;}
+  seenMovIds=new Set();
 }
 function showMovNotif(store,type,brand,model){
   const con=document.getElementById('toast-container');
   const t=document.createElement('div');
   t.className='toast t-notif';
-  const ico=type.includes('ENTRADA')?'📦':'📤';
-  t.innerHTML=ico+' <span><strong>'+store+'</strong> registró '+type.toLowerCase()+': '+brand+' '+model+'</span>';
+  const ico=(type||'').includes('ENTRADA')?'📦':'📤';
+  t.innerHTML=ico+' <span><strong>'+store+'</strong> registró '+(type||'').toLowerCase()+': '+brand+' '+model+'</span>';
   con.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transition='all .3s';setTimeout(()=>t.remove(),300);},5000);
 }
@@ -1575,7 +1614,13 @@ function showMovNotif(store,type,brand,model){
 // ─── INIT ───
 if(scriptUrl)document.getElementById('url-inp').value=scriptUrl;
 try{if(LS.getItem('inv_v5')){LS.removeItem('inv_v5');LS.removeItem('mov_v5');}}catch(e){}
-if(currentUser&&scriptUrl&&scriptUrl.includes('/exec')){showApp();loadFromSheets().then(()=>{startNotifPolling();});}
+if(currentUser&&scriptUrl&&scriptUrl.includes('/exec')){
+  showApp();
+  loadFromSheets().then(()=>{
+    initSeenMovs(); // snapshot de movimientos existentes ANTES de empezar polling
+    startNotifPolling();
+  });
+}
 else{currentUser=null;try{LS.removeItem('imei_user');}catch(e){}}
 </script>
 </body>
