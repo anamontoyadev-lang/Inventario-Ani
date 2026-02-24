@@ -375,6 +375,14 @@ tr.nr td{animation:rowIn .5s ease;}
 .queue-bar.hidden{display:none;}
 .filter-row{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--surface2);}
 .filter-row select{width:auto;flex:1;min-width:110px;padding:7px 10px;font-size:12px;}
+.search-bar{display:flex;align-items:center;gap:0;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color .2s;margin:10px 14px 0;}
+.search-bar:focus-within{border-color:var(--purple3);}
+.search-bar-ico{padding:0 10px;color:var(--muted);font-size:15px;flex-shrink:0;}
+.search-bar input{flex:1;border:none;background:transparent;padding:9px 4px;font-size:13px;color:var(--text);outline:none;font-family:'DM Sans',sans-serif;}
+.search-bar input::placeholder{color:var(--muted);}
+.search-bar-clear{padding:0 10px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;flex-shrink:0;line-height:1;}
+.search-bar-clear:hover{color:var(--rose2);}
+.search-count{font-size:11px;color:var(--muted);padding:4px 14px 8px;font-style:italic;}
 
 /* REPORTS */
 .rep-wrap{padding:16px;}
@@ -632,16 +640,30 @@ tr.nr td{animation:rowIn .5s ease;}
       </div>
 
       <!-- INV -->
-      <div class="tbl-wrap" id="tw-inv">
-        <table><thead><tr><th>#</th><th>Foto</th><th>Tienda</th><th>IMEI 1</th><th>Marca</th><th>Modelo</th><th>Color</th><th>GB</th><th>Precio</th><th>Stock</th><th>Sync</th><th id="th-del" style="display:none">Eliminar</th></tr></thead><tbody id="tb-inv"></tbody></table>
+      <div id="tw-inv">
+        <div class="search-bar">
+          <span class="search-bar-ico">🔍</span>
+          <input type="text" id="search-inv" placeholder="Buscar por IMEI, marca, modelo, color..." oninput="renderTables()" autocomplete="off" autocorrect="off" spellcheck="false">
+          <button class="search-bar-clear" onclick="document.getElementById('search-inv').value='';renderTables()" title="Limpiar">×</button>
+        </div>
+        <div class="search-count" id="search-inv-count"></div>
+        <div class="tbl-wrap">
+          <table><thead><tr><th>#</th><th>Foto</th><th>Tienda</th><th>IMEI 1</th><th>Marca</th><th>Modelo</th><th>Color</th><th>GB</th><th>Precio</th><th>Stock</th><th>Sync</th><th id="th-del" style="display:none">Eliminar</th></tr></thead><tbody id="tb-inv"></tbody></table>
+        </div>
       </div>
 
       <!-- MOV -->
       <div id="tw-mov" style="display:none">
-        <div class="filter-row">
+        <div class="search-bar" style="margin:10px 14px 0">
+          <span class="search-bar-ico">🔍</span>
+          <input type="text" id="search-mov" placeholder="Buscar por IMEI, marca, modelo..." oninput="renderTables()" autocomplete="off" autocorrect="off" spellcheck="false">
+          <button class="search-bar-clear" onclick="document.getElementById('search-mov').value='';renderTables()" title="Limpiar">×</button>
+        </div>
+        <div class="filter-row" style="margin-top:8px">
           <select id="f-store" onchange="renderTables()" style="font-size:12px"><option value="">Todas las tiendas</option><option>Tienda 1</option><option>Tienda 2</option><option>Tienda 3</option><option>Tienda 4</option><option>Tienda 5</option><option>Tienda 6</option><option>Tienda 7</option></select>
           <select id="f-type" onchange="renderTables()" style="font-size:12px"><option value="">Entradas y Salidas</option><option value="ENTRADA">Solo Entradas ✅</option><option value="SALIDA">Solo Salidas 🔴</option></select>
         </div>
+        <div class="search-count" id="search-mov-count"></div>
         <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tienda</th><th>Tipo</th><th>IMEI 1</th><th>Marca</th><th>Modelo</th><th>Costo</th><th style="color:var(--success)">Venta</th><th>Fecha</th><th>Hora</th><th>Notas</th><th id="th-del-mov" style="display:none">Eliminar</th></tr></thead><tbody id="tb-mov"></tbody></table></div>
       </div>
 
@@ -1418,13 +1440,22 @@ function renderTables(){
   const si=s=>s==='synced'?'<span style="color:var(--success)">✓</span>':s==='sending'?'<span class="spin">⟳</span>':s==='error'?'<span style="color:var(--rose2)">✗</span>':'<span style="color:var(--warning)">⏳</span>';
   const isAdmin=currentUser&&currentUser.role==='admin';
 
-  // ── Tabla Inventario ── (renderiza independiente de movimientos)
+  // ── Tabla Inventario ── con búsqueda
   const tbi=document.getElementById('tb-inv');
-  if(!inv.length){
-    tbi.innerHTML=`<tr><td colspan="12"><div class="empty-state"><div class="big">📱</div><p>Sin equipos registrados</p></div></td></tr>`;
+  const qInv=(document.getElementById('search-inv')?.value||'').toLowerCase().trim();
+  const filteredInv=qInv
+    ?inv.filter(r=>[r.imei1,r.imei2,r.brand,r.model,r.color,r.storage,r.serial,r.store]
+        .some(v=>String(v||'').toLowerCase().includes(qInv)))
+    :inv;
+  const cntInvEl=document.getElementById('search-inv-count');
+  if(cntInvEl) cntInvEl.textContent=qInv?`${filteredInv.length} resultado${filteredInv.length!==1?'s':''} de ${inv.length} equipos`:'';
+  if(!filteredInv.length){
+    tbi.innerHTML=qInv
+      ?`<tr><td colspan="12"><div class="empty-state"><div class="big">🔍</div><p>Sin resultados para "<strong>${qInv}</strong>"</p></div></td></tr>`
+      :`<tr><td colspan="12"><div class="empty-state"><div class="big">📱</div><p>Sin equipos registrados</p></div></td></tr>`;
   } else {
-    tbi.innerHTML=inv.map((r,i)=>`<tr class="${r.fresh?'nr':''}">
-      <td style="color:var(--muted);font-size:10px;font-family:'JetBrains Mono',monospace">${inv.length-i}</td>
+    tbi.innerHTML=filteredInv.map((r,i)=>`<tr class="${r.fresh?'nr':''}">
+      <td style="color:var(--muted);font-size:10px;font-family:'JetBrains Mono',monospace">${filteredInv.length-i}</td>
       <td>${r.photoUrl?`<img src="${r.photoUrl}" class="pt" onerror="this.style.display='none'">`:r.photoLocal?`<img src="${r.photoLocal}" class="pt">`:'—'}</td>
       <td><span class="store-tag">${r.store||'—'}</span></td>
       <td class="imei-c">${r.imei1}</td>
@@ -1437,18 +1468,25 @@ function renderTables(){
       <td>${si(r.syncStatus)}</td>
       ${isAdmin?`<td><button class="del-btn" onclick="openDeleteModal('${r.imei1}')">🗑 Eliminar</button></td>`:''}
     </tr>`).join('');
-    inv.forEach(r=>r.fresh=false);
+    filteredInv.forEach(r=>r.fresh=false);
   }
 
-  // ── Tabla Movimientos ── (renderiza SIEMPRE, independiente de inventario)
+  // ── Tabla Movimientos ── con búsqueda
   const tbm=document.getElementById('tb-mov');
   const fStore=document.getElementById('f-store')?.value||'';
   const fType=document.getElementById('f-type')?.value||'';
+  const qMov=(document.getElementById('search-mov')?.value||'').toLowerCase().trim();
   let fm=mov;
-  if(fStore)fm=fm.filter(r=>r.store===fStore);
-  if(fType)fm=fm.filter(r=>r.type&&r.type.includes(fType));
+  if(fStore) fm=fm.filter(r=>r.store===fStore);
+  if(fType)  fm=fm.filter(r=>r.type&&r.type.includes(fType));
+  if(qMov)   fm=fm.filter(r=>[r.imei1,r.brand,r.model,r.color,r.storage,r.store,r.notes]
+               .some(v=>String(v||'').toLowerCase().includes(qMov)));
+  const cntMovEl=document.getElementById('search-mov-count');
+  if(cntMovEl) cntMovEl.textContent=qMov?`${fm.length} resultado${fm.length!==1?'s':''} de ${mov.length} movimientos`:'';
   if(!fm.length){
-    tbm.innerHTML=`<tr><td colspan="12"><div class="empty-state"><div class="big">📋</div><p>Sin movimientos</p></div></td></tr>`;
+    tbm.innerHTML=qMov
+      ?`<tr><td colspan="12"><div class="empty-state"><div class="big">🔍</div><p>Sin resultados para "<strong>${qMov}</strong>"</p></div></td></tr>`
+      :`<tr><td colspan="12"><div class="empty-state"><div class="big">📋</div><p>Sin movimientos</p></div></td></tr>`;
   } else {
     tbm.innerHTML=fm.map((r,i)=>`<tr>
       <td style="color:var(--muted);font-size:10px;font-family:'JetBrains Mono',monospace">${fm.length-i}</td>
