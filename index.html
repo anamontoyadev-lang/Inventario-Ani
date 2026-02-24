@@ -384,6 +384,25 @@ tr.nr td{animation:rowIn .5s ease;}
 .search-bar-clear:hover{color:var(--rose2);}
 .search-count{font-size:11px;color:var(--muted);padding:4px 14px 8px;font-style:italic;}
 
+/* ── GESTIÓN DE USUARIOS ── */
+.users-table{width:100%;border-collapse:collapse;font-size:13px;}
+.users-table th{padding:9px 12px;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:left;border-bottom:1px solid var(--border);}
+.users-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.users-table tr:hover td{background:rgba(124,92,191,.02);}
+.role-badge{display:inline-block;padding:3px 9px;border-radius:5px;font-size:10px;font-weight:700;}
+.role-badge.admin{background:rgba(53,28,117,.1);color:var(--purple1);}
+.role-badge.store{background:rgba(42,122,74,.1);color:var(--success);}
+.role-badge.leader{background:rgba(154,104,0,.1);color:var(--warning);}
+.edit-field{width:100%;border:1.5px solid var(--border);border-radius:7px;padding:7px 10px;font-size:12px;font-family:'DM Sans',sans-serif;background:var(--surface);color:var(--text);transition:border-color .2s;}
+.edit-field:focus{outline:none;border-color:var(--purple3);}
+.save-user-btn{background:var(--grad-purple);border:none;border-radius:7px;color:#fff;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.save-user-btn:disabled{opacity:.4;cursor:not-allowed;}
+.log-row{font-size:11px;padding:7px 10px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:start;}
+.log-row:last-child{border-bottom:none;}
+.log-ts{color:var(--muted);white-space:nowrap;font-family:'JetBrains Mono',monospace;}
+.log-msg{color:var(--text);}
+.log-who{color:var(--purple3);font-weight:700;white-space:nowrap;}
+
 /* REPORTS */
 .rep-wrap{padding:16px;}
 .rep-section-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
@@ -493,6 +512,7 @@ tr.nr td{animation:rowIn .5s ease;}
       </div>
 
       <div class="user-chip" id="user-chip">—</div>
+      <button class="btn-logout" id="btn-users-mgmt" onclick="openUsersModal()" style="display:none;margin-right:4px" title="Gestión de usuarios">👥</button>
       <button class="btn-logout" onclick="logout()">Salir</button>
     </div>
   </div>
@@ -691,6 +711,41 @@ tr.nr td{animation:rowIn .5s ease;}
   </div>
 </div>
 
+<!-- MODAL GESTIÓN DE USUARIOS -->
+<div class="modal-overlay" id="modal-users">
+  <div class="modal" style="max-width:680px;max-height:92vh;overflow-y:auto;padding:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2">
+      <div>
+        <div style="font-size:16px;font-weight:700">👥 Gestión de Usuarios</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Cambia contraseñas y nombres de tienda · Todo queda registrado</div>
+      </div>
+      <button onclick="closeModal('modal-users')" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1">×</button>
+    </div>
+
+    <!-- Tabla de usuarios -->
+    <div style="padding:16px 20px 8px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px">Usuarios del sistema</div>
+      <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">
+        <table class="users-table">
+          <thead><tr><th>Usuario</th><th>Rol</th><th>Nombre / Tienda</th><th>Nueva contraseña</th><th></th></tr></thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Log de cambios -->
+    <div style="padding:8px 20px 20px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
+        <span>📋 Historial de cambios</span>
+        <button onclick="loadUserLog()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;color:var(--muted)">↻ Actualizar</button>
+      </div>
+      <div id="user-log-wrap" style="border:1px solid var(--border);border-radius:10px;max-height:180px;overflow-y:auto;background:var(--surface2)">
+        <div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Cargando historial...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL INGRESO MASIVO EXCEL -->
 <div class="modal-overlay" id="modal-bulk">
   <div class="modal" style="max-width:520px;max-height:90vh;overflow-y:auto">
@@ -872,11 +927,14 @@ function doLogin(){
   currentUser={username:user,role:u.role,store:u.store,name:u.name};
   try{LS.setItem('imei_user',JSON.stringify(currentUser));}catch(e){}
   showApp();
-  loadFromSheets().then(()=>{
-    renderTables();
-    updateStats();
-    initSeenMovs();
-    startNotifPolling();
+  // Primero cargar usuarios actualizados desde Sheets, luego los datos
+  loadUsersFromSheets().then(()=>{
+    loadFromSheets().then(()=>{
+      renderTables();
+      updateStats();
+      initSeenMovs();
+      startNotifPolling();
+    });
   });
 }
 function showApp(){
@@ -904,6 +962,8 @@ function showApp(){
   if(btnBulk) btnBulk.style.display=isAdmin?'inline-flex':'none';
   const btnAct=document.getElementById('btn-actualizar');
   if(btnAct) btnAct.style.display=isAdmin?'inline-flex':'none';
+  const btnUsers=document.getElementById('btn-users-mgmt');
+  if(btnUsers) btnUsers.style.display=isAdmin?'inline-flex':'none';
 }
 function logout(){
   currentUser=null;try{LS.removeItem('imei_user');}catch(e){}stopNotifPolling();
@@ -1952,6 +2012,153 @@ async function doBulkImport(){
   bulkImporting=false;
   bulkRows=[];
   document.getElementById('bulk-file').value='';
+}
+
+// ─── GESTIÓN DE USUARIOS ───
+// Los usuarios se almacenan en USERS (en memoria) y en Sheets (hoja Usuarios)
+// Al abrir el modal se cargan desde Sheets; al guardar se actualiza Sheets y USERS
+
+function openUsersModal(){
+  document.getElementById('modal-users').classList.add('open');
+  renderUsersTable();
+  loadUserLog();
+}
+
+function renderUsersTable(){
+  const tbody = document.getElementById('users-tbody');
+  const rows = Object.entries(USERS).map(([username, u]) => {
+    const roleBadge = `<span class="role-badge ${u.role}">${u.role==='admin'?'👑 Admin':u.role==='leader'?'👁 Líder':'🏪 Tienda'}</span>`;
+    const nameField = u.role==='admin'
+      ? `<span style="color:var(--muted);font-size:12px">${u.name}</span>`
+      : `<input class="edit-field" id="uname-${username}" value="${u.name||u.store||''}" placeholder="Nombre de tienda" style="max-width:160px">`;
+    return `<tr>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--purple3);font-weight:700">${username}</td>
+      <td>${roleBadge}</td>
+      <td>${nameField}</td>
+      <td><input class="edit-field" id="upass-${username}" type="password" placeholder="Nueva contraseña" style="max-width:160px" ${u.role==='admin'?'':''}></td>
+      <td>${u.role!=='admin'?`<button class="save-user-btn" onclick="saveUser('${username}')">💾 Guardar</button>`:
+        `<button class="save-user-btn" onclick="saveUser('${username}')">💾 Guardar</button>`}</td>
+    </tr>`;
+  });
+  tbody.innerHTML = rows.join('');
+}
+
+async function saveUser(username){
+  const u = USERS[username];
+  if(!u){ showFb('⚠ Usuario no encontrado','error'); return; }
+
+  const newPass  = document.getElementById('upass-'+username)?.value.trim()||'';
+  const nameEl   = document.getElementById('uname-'+username);
+  const newName  = nameEl ? nameEl.value.trim() : '';
+
+  if(!newPass && !newName){ showFb('⚠ Ingresa nueva contraseña o nombre','error'); return; }
+
+  const btn = document.querySelector(`button[onclick="saveUser('${username}')"]`);
+  if(btn){ btn.disabled=true; btn.textContent='⟳ Guardando...'; }
+
+  const changes = [];
+  if(newPass && newPass !== u.password){
+    changes.push({field:'password', old:'***', new:'***'});
+    USERS[username].password = newPass;
+  }
+  if(newName && u.role!=='admin' && newName !== (u.name||u.store)){
+    changes.push({field:'name', old:u.name||u.store, new:newName});
+    USERS[username].name  = newName;
+    USERS[username].store = newName;
+    // Si el usuario está logueado como esta tienda, actualizar sesión
+    if(currentUser && currentUser.username===username){
+      currentUser.name  = newName;
+      currentUser.store = newName;
+      try{ LS.setItem('imei_user', JSON.stringify(currentUser)); }catch(e){}
+    }
+  }
+
+  if(!changes.length){
+    showFb('ℹ Sin cambios detectados','pending');
+    if(btn){ btn.disabled=false; btn.textContent='💾 Guardar'; }
+    return;
+  }
+
+  // Guardar en Sheets
+  if(isValidUrl(scriptUrl)){
+    try{
+      const payload = {
+        action:    'save_user',
+        username,
+        password:  USERS[username].password,
+        name:      USERS[username].name,
+        store:     USERS[username].store,
+        role:      u.role,
+        changedBy: currentUser.username,
+        changes:   JSON.stringify(changes)
+      };
+      const res  = await fetch(scriptUrl, {method:'POST', body:JSON.stringify(payload), headers:{'Content-Type':'text/plain'}});
+      const text = await res.text();
+      let d; try{ d=JSON.parse(text); }catch(e){ d={success:false,error:'Respuesta inválida'}; }
+      if(d.success){
+        showFb('✅ Usuario actualizado correctamente','success');
+        if(newPass) document.getElementById('upass-'+username).value='';
+        loadUserLog();
+      } else {
+        showFb('⚠ Error al guardar: '+(d.error||''),'error');
+      }
+    }catch(e){
+      showFb('⚠ Error de red — cambio aplicado localmente','error');
+    }
+  } else {
+    showFb('✅ Cambio aplicado (sin Sheets configurado)','success');
+    if(newPass) document.getElementById('upass-'+username).value='';
+  }
+
+  if(btn){ btn.disabled=false; btn.textContent='💾 Guardar'; }
+}
+
+async function loadUserLog(){
+  const wrap = document.getElementById('user-log-wrap');
+  if(!wrap) return;
+  if(!isValidUrl(scriptUrl)){
+    wrap.innerHTML='<div style="padding:14px;text-align:center;color:var(--muted);font-size:12px">Configura la URL de Sheets para ver el historial</div>';
+    return;
+  }
+  wrap.innerHTML='<div style="padding:14px;text-align:center;color:var(--muted);font-size:12px">⟳ Cargando...</div>';
+  try{
+    const url = scriptUrl+'?action=get_user_log&role=admin';
+    const res  = await fetch(url,{cache:'no-store'});
+    const text = await res.text();
+    let d; try{ d=JSON.parse(text); }catch(e){ d={success:false}; }
+    if(d.success && d.log && d.log.length){
+      wrap.innerHTML = d.log.map(l=>`
+        <div class="log-row">
+          <span class="log-ts">${l.ts}</span>
+          <span class="log-msg">${l.msg}</span>
+          <span class="log-who">${l.by}</span>
+        </div>`).join('');
+    } else {
+      wrap.innerHTML='<div style="padding:14px;text-align:center;color:var(--muted);font-size:12px">Sin cambios registrados aún</div>';
+    }
+  }catch(e){
+    wrap.innerHTML='<div style="padding:14px;text-align:center;color:var(--muted);font-size:12px">Error cargando historial</div>';
+  }
+}
+
+// Cargar usuarios desde Sheets al iniciar (para tener la versión más reciente)
+async function loadUsersFromSheets(){
+  if(!isValidUrl(scriptUrl)) return;
+  try{
+    const url = scriptUrl+'?action=get_users&role=admin';
+    const res  = await fetch(url,{cache:'no-store'});
+    const text = await res.text();
+    let d; try{ d=JSON.parse(text); }catch(e){ return; }
+    if(d.success && d.users){
+      d.users.forEach(u=>{
+        if(USERS[u.username]){
+          USERS[u.username].password = u.password||USERS[u.username].password;
+          USERS[u.username].name     = u.name||USERS[u.username].name;
+          USERS[u.username].store    = u.store||USERS[u.username].store;
+        }
+      });
+    }
+  }catch(e){}
 }
 
 // ─── POLLING NOTIFICACIONES ───
