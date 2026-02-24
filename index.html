@@ -38,9 +38,10 @@ body[data-role="leader"] #tab-rep { display: block; }
 body[data-role="leader"] #mode-row { display: none !important; }
 body[data-role="leader"] #step-bar { display: none !important; }
 
-/* NOTIF BELL — solo visible para admin */
+/* NOTIF BELL — visible para admin y leader */
 #notif-bell-wrap { display: none; }
 body[data-role="admin"] #notif-bell-wrap { display: flex; }
+body[data-role="leader"] #notif-bell-wrap { display: flex; }
 
 .login-screen{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:16px;}
 .login-screen.hidden{display:none;}
@@ -1008,6 +1009,7 @@ async function loadFromSheets(){
       const rawMov=data.movements||[];
       // Filtro extra cliente: tienda solo ve SUS movimientos e inventario
       if(currentUser.role==='store'){
+        // Tienda: solo ve su propio inventario y movimientos
         inv=rawInv
           .filter(r=>r.store===currentUser.store)
           .map(r=>({...r,syncStatus:'synced',fresh:false}));
@@ -1015,6 +1017,7 @@ async function loadFromSheets(){
           .filter(r=>r.store===currentUser.store)
           .map((r,i)=>({...r,id:i}));
       } else {
+        // Admin y lider: ven todo
         inv=rawInv.map(r=>({...r,syncStatus:'synced',fresh:false}));
         mov=rawMov.map((r,i)=>({...r,id:i}));
       }
@@ -1920,52 +1923,68 @@ function startNotifPolling(){
   notifInterval=setInterval(async()=>{
     if(!isValidUrl(scriptUrl)||!currentUser)return;
     try{
-      // Admin siempre obtiene todos los datos para detectar movimientos de cualquier tienda
-      const url=scriptUrl+'?action=get_data&role=admin&store=&ts='+Date.now();
-      const res=await fetch(url);
-      const data=await res.json();
+      const isAdmin   = currentUser.role==='admin';
+      const isLeader  = currentUser.role==='leader';
+      const isStore   = currentUser.role==='store';
+
+      // Admin y lider obtienen TODOS los movimientos para detectar novedades
+      // Tienda solo obtiene los suyos
+      const pollRole  = (isAdmin||isLeader) ? 'admin' : 'store';
+      const pollStore = isStore ? (currentUser.store||'') : '';
+      const url = scriptUrl+'?action=get_data&role='+encodeURIComponent(pollRole)+'&store='+encodeURIComponent(pollStore);
+      const res = await fetch(url,{cache:'no-store'});
+      const data = await res.json();
       if(!data.success)return;
 
-      const freshMov=data.movements.map((r,i)=>({...r,id:i}));
+      const freshMov = data.movements.map((r,i)=>({...r,id:i}));
 
-      // Detectar movimientos que NO habiamos visto antes
-      const newMov=freshMov.filter(m=>!seenMovIds.has(buildMovId(m)));
+      // Detectar movimientos nuevos (no vistos antes)
+      const newMov = freshMov.filter(m=>!seenMovIds.has(buildMovId(m)));
 
       if(newMov.length>0){
         newMov.forEach(m=>{
-          const tienda=String(m.store||'').trim()||'Sin tienda';
-          const tipo=String(m.type||'').trim();
-          const brand=String(m.brand||'').trim();
-          const model=String(m.model||'').trim();
+          const tienda = String(m.store||'').trim()||'Sin tienda';
+          const tipo   = String(m.type||'').trim();
+          const brand  = String(m.brand||'').trim();
+          const model  = String(m.model||'').trim();
 
-          if(currentUser.role==='admin'){
-            // Admin recibe notificacion de TODAS las tiendas con la tienda correcta
+          if(isAdmin){
+            // Admin: campana con TODOS los movimientos de todas las tiendas
             addNotification(tienda,tipo,brand,model);
-          } else if(tienda!==currentUser.store){
-            // Tienda: solo notificaciones de otras tiendas (informativo)
-            showMovNotif(tienda,tipo,brand,model);
+
+          } else if(isLeader){
+            // Lider: campana con todos los movimientos (igual que admin)
+            addNotification(tienda,tipo,brand,model);
+
+          } else if(isStore){
+            // Tienda: SOLO toast de sus PROPIOS movimientos registrados en otro dispositivo
+            if(tienda===currentUser.store){
+              showMovNotif(tienda,tipo,brand,model);
+            }
+            // Movimientos de otras tiendas: silencio total
           }
-          // Agregar al set para no volver a notificar
           seenMovIds.add(buildMovId(m));
         });
 
-        // Actualizar datos locales con todos los datos frescos
-        const freshInv=data.inventory.map(r=>({...r,syncStatus:'synced',fresh:false}));
-        // Tiendas solo ven sus propios movimientos
-        const filteredMov=(currentUser.role==='store')
-          ?freshMov.filter(r=>r.store===currentUser.store)
-          :freshMov;
+        // Actualizar datos locales
+        const freshInv = data.inventory.map(r=>({...r,syncStatus:'synced',fresh:false}));
 
-        inv=freshInv;
-        mov=filteredMov;
+        if(isStore){
+          // Tienda solo ve su propio inventario y movimientos
+          inv = freshInv.filter(r=>r.store===currentUser.store);
+          mov = freshMov.filter(r=>r.store===currentUser.store);
+        } else {
+          // Admin y lider ven todo
+          inv = freshInv;
+          mov = freshMov;
+        }
         saveData();
         renderTables();
         updateStats();
         if(curTab==='rep') renderReports();
       }
     }catch(e){
-      // Silenciar errores de red (sin conexion, URL no configurada, etc.)
-      // No loguear en consola para no generar ruido
+      // Silenciar errores de red
     }
   },30000);
 }
