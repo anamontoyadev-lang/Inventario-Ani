@@ -2099,14 +2099,24 @@ async function saveUser(username){
         changedBy: currentUser.username,
         changes:   JSON.stringify(changes)
       };
-      const res  = await fetch(scriptUrl,{
-        method:'POST',
-        body:JSON.stringify(payload),
-        headers:{'Content-Type':'text/plain'}
+      // Usar GET con params para evitar redirección POST→GET de Apps Script
+      const params = new URLSearchParams({
+        action:    'save_user',
+        username,
+        password:  payload.password,
+        name:      payload.name   ||'',
+        store:     payload.store  ||'',
+        role:      payload.role,
+        changedBy: payload.changedBy,
+        changes:   payload.changes
+      });
+      const res  = await fetch(scriptUrl+'?'+params.toString(),{
+        method:'GET',
+        cache:'no-store'
       });
       const text = await res.text();
       let d;
-      try{ d=JSON.parse(text); }catch(e){ d={success:false,error:'Respuesta no JSON: '+text.substring(0,80)}; }
+      try{ d=JSON.parse(text); }catch(e){ d={success:false,error:'Respuesta no JSON: '+text.substring(0,120)}; }
       if(d.success){
         showFb('✅ '+username+' actualizado correctamente','success',4000);
         if(passEl) passEl.value='';
