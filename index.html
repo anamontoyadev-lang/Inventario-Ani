@@ -1718,9 +1718,10 @@ function processBulkFile(file){
       rows=parseCSV(text);
     } else {
       try{
-        const wb=XLSX.read(data,{type:'array'});
+        const wb=XLSX.read(data,{type:'array',cellText:false,cellDates:true});
         const ws=wb.Sheets[wb.SheetNames[0]];
-        rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+        // raw:true preserva los números exactos (evita notación científica en IMEI)
+        rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:true});
       }catch(ex){
         document.getElementById('bulk-status').textContent='❌ Error leyendo archivo: '+ex.message;
         document.getElementById('bulk-file-name').textContent='';
@@ -1743,11 +1744,24 @@ function processBulkFile(file){
 }
 
 function normalizeBulkRow(r){
+  // Convierte un valor a string limpio, manejando floats de Excel (ej: 359439060626008.0)
+  const cleanVal=(v)=>{
+    if(v===null||v===undefined||v==='')return '';
+    // Si es número (IMEI guardado como número en Excel)
+    if(typeof v==='number'){
+      // Evitar notación científica y quitar decimales .0
+      // Usar toFixed(0) para enteros, luego convertir
+      const s=Number.isInteger(v)?String(v):String(Math.round(v));
+      return s.trim();
+    }
+    return String(v).trim();
+  };
+
   const g=(keys)=>{
     for(const k of keys){
       for(const rk of Object.keys(r)){
         if(rk.toLowerCase().replace(/[_\s]/g,'')===k.toLowerCase().replace(/[_\s]/g,'')){
-          return String(r[rk]||'').trim();
+          return cleanVal(r[rk]);
         }
       }
     }
