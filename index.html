@@ -2047,36 +2047,43 @@ async function saveUser(username){
   const u = USERS[username];
   if(!u){ showFb('⚠ Usuario no encontrado','error'); return; }
 
-  const newPass  = document.getElementById('upass-'+username)?.value.trim()||'';
-  const nameEl   = document.getElementById('uname-'+username);
-  const newName  = nameEl ? nameEl.value.trim() : '';
+  const passEl  = document.getElementById('upass-'+username);
+  const nameEl  = document.getElementById('uname-'+username);
+  const newPass = passEl ? passEl.value.trim() : '';
+  const newName = nameEl ? nameEl.value.trim() : '';
 
-  if(!newPass && !newName){ showFb('⚠ Ingresa nueva contraseña o nombre','error'); return; }
+  // Obtener valores anteriores reales para comparar
+  const oldPass  = u.password;
+  const oldName  = u.name || u.store || '';
+
+  // Detectar cambios reales
+  const changes = [];
+  const passChanged = newPass && newPass !== oldPass;
+  const nameChanged = newName && u.role!=='admin' && newName !== oldName;
+
+  if(!passChanged && !nameChanged){
+    showFb('ℹ Sin cambios — escribe una nueva contraseña o modifica el nombre','pending');
+    return;
+  }
 
   const btn = document.querySelector(`button[onclick="saveUser('${username}')"]`);
   if(btn){ btn.disabled=true; btn.textContent='⟳ Guardando...'; }
 
-  const changes = [];
-  if(newPass && newPass !== u.password){
+  // Aplicar cambios en memoria
+  if(passChanged){
     changes.push({field:'password', old:'***', new:'***'});
     USERS[username].password = newPass;
   }
-  if(newName && u.role!=='admin' && newName !== (u.name||u.store)){
-    changes.push({field:'name', old:u.name||u.store, new:newName});
+  if(nameChanged){
+    changes.push({field:'name', old:oldName, new:newName});
     USERS[username].name  = newName;
     USERS[username].store = newName;
-    // Si el usuario está logueado como esta tienda, actualizar sesión
+    // Si está logueado como esta tienda, actualizar sesión activa
     if(currentUser && currentUser.username===username){
       currentUser.name  = newName;
       currentUser.store = newName;
       try{ LS.setItem('imei_user', JSON.stringify(currentUser)); }catch(e){}
     }
-  }
-
-  if(!changes.length){
-    showFb('ℹ Sin cambios detectados','pending');
-    if(btn){ btn.disabled=false; btn.textContent='💾 Guardar'; }
-    return;
   }
 
   // Guardar en Sheets
@@ -2092,22 +2099,32 @@ async function saveUser(username){
         changedBy: currentUser.username,
         changes:   JSON.stringify(changes)
       };
-      const res  = await fetch(scriptUrl, {method:'POST', body:JSON.stringify(payload), headers:{'Content-Type':'text/plain'}});
+      const res  = await fetch(scriptUrl,{
+        method:'POST',
+        body:JSON.stringify(payload),
+        headers:{'Content-Type':'text/plain'}
+      });
       const text = await res.text();
-      let d; try{ d=JSON.parse(text); }catch(e){ d={success:false,error:'Respuesta inválida'}; }
+      let d;
+      try{ d=JSON.parse(text); }catch(e){ d={success:false,error:'Respuesta no JSON: '+text.substring(0,80)}; }
       if(d.success){
-        showFb('✅ Usuario actualizado correctamente','success');
-        if(newPass) document.getElementById('upass-'+username).value='';
+        showFb('✅ '+username+' actualizado correctamente','success',4000);
+        if(passEl) passEl.value='';
         loadUserLog();
       } else {
-        showFb('⚠ Error al guardar: '+(d.error||''),'error');
+        // Revertir cambios en memoria si Sheets falló
+        USERS[username].password = oldPass;
+        if(nameChanged){ USERS[username].name=oldName; USERS[username].store=oldName; }
+        showFb('⚠ Error Sheets: '+(d.error||'sin detalle'),'error',6000);
       }
     }catch(e){
-      showFb('⚠ Error de red — cambio aplicado localmente','error');
+      USERS[username].password = oldPass;
+      if(nameChanged){ USERS[username].name=oldName; USERS[username].store=oldName; }
+      showFb('⚠ Error de red al guardar','error');
     }
   } else {
-    showFb('✅ Cambio aplicado (sin Sheets configurado)','success');
-    if(newPass) document.getElementById('upass-'+username).value='';
+    showFb('✅ Cambio aplicado localmente (configura Sheets para persistir)','success');
+    if(passEl) passEl.value='';
   }
 
   if(btn){ btn.disabled=false; btn.textContent='💾 Guardar'; }
