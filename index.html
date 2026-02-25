@@ -680,7 +680,7 @@ tr.nr td{animation:rowIn .5s ease;}
           <button class="search-bar-clear" onclick="document.getElementById('search-mov').value='';renderTables()" title="Limpiar">×</button>
         </div>
         <div class="filter-row" style="margin-top:8px">
-          <select id="f-store" onchange="renderTables()" style="font-size:12px"><option value="">Todas las tiendas</option><option>Tienda 1</option><option>Tienda 2</option><option>Tienda 3</option><option>Tienda 4</option><option>Tienda 5</option><option>Tienda 6</option><option>Tienda 7</option></select>
+          <select id="f-store" onchange="renderTables()" style="font-size:12px"><option value="">Todas las tiendas</option></select>
           <select id="f-type" onchange="renderTables()" style="font-size:12px"><option value="">Entradas y Salidas</option><option value="ENTRADA">Solo Entradas ✅</option><option value="SALIDA">Solo Salidas 🔴</option></select>
         </div>
         <div class="search-count" id="search-mov-count"></div>
@@ -964,6 +964,7 @@ function showApp(){
   if(btnAct) btnAct.style.display=isAdmin?'inline-flex':'none';
   const btnUsers=document.getElementById('btn-users-mgmt');
   if(btnUsers) btnUsers.style.display=isAdmin?'inline-flex':'none';
+  updateStoreSelects();
 }
 function logout(){
   currentUser=null;try{LS.removeItem('imei_user');}catch(e){}stopNotifPolling();
@@ -1495,6 +1496,17 @@ function updateStats(){
   if(cntOut)   cntOut.textContent=o;
   if(cntTotal) cntTotal.textContent=t;
 }
+function updateStoreSelects(){
+  // Poblar selects de tienda con nombres reales de USERS
+  const storeNames=Object.values(USERS)
+    .filter(u=>u.role==='store'&&u.store)
+    .map(u=>u.store)
+    .sort();
+  const opts='<option value="">Todas las tiendas</option>'+storeNames.map(s=>`<option value="${s}">${s}</option>`).join('');
+  const sel=document.getElementById('f-store');
+  if(sel){ const cur=sel.value; sel.innerHTML=opts; if(cur) sel.value=cur; }
+}
+
 function renderTables(){
   updateStats();
   const si=s=>s==='synced'?'<span style="color:var(--success)">✓</span>':s==='sending'?'<span class="spin">⟳</span>':s==='error'?'<span style="color:var(--rose2)">✗</span>':'<span style="color:var(--warning)">⏳</span>';
@@ -1588,9 +1600,13 @@ function fmt$(val){
   return '$'+n.toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 function renderReports(){
-  const baseStores=['Tienda 1','Tienda 2','Tienda 3','Tienda 4','Tienda 5','Tienda 6','Tienda 7'];
-  const dynStores=[...new Set([...baseStores,...inv.map(r=>r.store),...mov.map(r=>r.store)].filter(s=>s&&s!=='null'&&s!=='undefined'))].sort();
-  const stores=dynStores.length?dynStores:baseStores;
+  // Nombres reales desde USERS (respeta los cambios del módulo de usuarios)
+  const storeNames=Object.values(USERS)
+    .filter(u=>u.role==='store'&&u.store)
+    .map(u=>u.store);
+  // Completar con tiendas que aparezcan en datos pero no estén en USERS
+  const allFromData=[...inv.map(r=>r.store),...mov.map(r=>r.store)].filter(s=>s&&s!=='null'&&s!=='undefined'&&s!=='Admin');
+  const stores=[...new Set([...storeNames,...allFromData])].sort();
 
   // Fuente unica de verdad: tabla mov para entradas/salidas; inv para stock real
   const ts=inv.filter(r=>String(r.stock)==='1'||r.stock===1).length;
@@ -2120,6 +2136,8 @@ async function saveUser(username){
       if(d.success){
         showFb('✅ '+username+' actualizado correctamente','success',4000);
         if(passEl) passEl.value='';
+        updateStoreSelects(); // refrescar selects con nuevo nombre
+        if(curTab==='rep') renderReports(); // refrescar reportes
         loadUserLog();
       } else {
         // Revertir cambios en memoria si Sheets falló
