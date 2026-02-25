@@ -297,6 +297,10 @@ body[data-role="leader"] #notif-bell-wrap { display: flex; }
 .sc-ctrls .btn{flex:1;justify-content:center;padding:10px 12px;}
 
 /* PLATFORM */
+.plat-row{display:flex;margin-bottom:12px;border-radius:10px;overflow:hidden;border:1.5px solid var(--border);}
+.plat-btn{flex:1;padding:11px;text-align:center;cursor:pointer;font-size:14px;font-weight:700;transition:all .2s;border:none;background:transparent;color:var(--muted);}
+.plat-btn.ai{background:linear-gradient(135deg,rgba(124,92,191,.12),rgba(106,50,159,.06));color:var(--purple3);}
+.plat-btn.aa{background:linear-gradient(135deg,rgba(42,122,74,.1),rgba(42,122,74,.04));color:var(--success);}
 
 
 /* FORM */
@@ -632,7 +636,13 @@ tr.nr td{animation:rowIn .5s ease;}
             <div class="full"><label class="fl">IMEI 1 *</label><input type="text" id="f-imei1" placeholder="15 dígitos" maxlength="16"></div>
             <div class="full"><label class="fl">IMEI 2</label><input type="text" id="f-imei2" placeholder="15 dígitos"></div>
             <div class="full"><label class="fl">Serial</label><input type="text" id="f-serial" placeholder="Número de serie"></div>
-            <div class="full"><label class="fl">Marca</label><select id="f-brand" onchange="onBrand()"><option value="">— Selecciona marca —</option></select></div>
+            <div class="full">
+              <div class="plat-row">
+                <button class="plat-btn" id="btn-ios" onclick="setPlatform('iOS')">🍎 iPhone</button>
+                <button class="plat-btn" id="btn-android" onclick="setPlatform('Android')">🤖 Android</button>
+              </div>
+              <label class="fl">Marca</label><select id="f-brand" onchange="onBrand()"><option value="">— Selecciona plataforma —</option></select>
+            </div>
             <div class="full">
               <label class="fl">Modelo</label>
               <select id="f-model" disabled onchange="onModelSel()"><option value="">— Selecciona marca —</option><option value="__m__">✏️ Escribir manualmente...</option></select>
@@ -957,7 +967,7 @@ function isValidUrl(url){
 let currentUser=(()=>{try{return JSON.parse(LS.getItem('imei_user')||'null');}catch(e){return null;}})();
 let mode='entry',scannerRunning=false,currentStep=1,scanLocked=false,detBuf=[];
 let sv={imei1:'',imei2:'',serial:''};
-let selColor='',photoData=null,curTab='inv';
+let selPlat='',selColor='',photoData=null,curTab='inv';
 
 // ─── NOTIFICATIONS STATE ───
 let notifications=[];
@@ -1238,10 +1248,27 @@ function getModel(){
   const s=document.getElementById('f-model').value;
   return s==='__m__'?document.getElementById('f-model-m').value.trim():s;
 }
+function setPlatform(p){
+  selPlat=p;
+  document.getElementById('btn-ios').className='plat-btn'+(p==='iOS'?' ai':'');
+  document.getElementById('btn-android').className='plat-btn'+(p==='Android'?' aa':'');
+  const brand=document.getElementById('f-brand');
+  brand.innerHTML='<option value="">— Selecciona marca —</option>';
+  const brands=Object.keys(CAT[p]);
+  brands.forEach(b=>brand.innerHTML+=`<option value="${b}">${b}</option>`);
+  // Reset modelo y color
+  document.getElementById('f-model').innerHTML='<option value="">— Selecciona marca —</option><option value="__m__">✏️ Escribir manualmente...</option>';
+  document.getElementById('f-model').disabled=true;
+  document.getElementById('f-model-m').style.display='none';
+  document.getElementById('f-color').innerHTML='<option value="">—</option>';
+  document.getElementById('color-sw').innerHTML='';
+  selColor='';
+}
 function onBrand(){
   const br=document.getElementById('f-brand').value;
   if(!br)return;
-  const d=(CAT['iOS'][br]||CAT['Android'][br]);if(!d)return;
+  const plat=selPlat||(CAT['iOS'][br]?'iOS':'Android');
+  const d=CAT[plat][br];if(!d)return;
   const ms=document.getElementById('f-model');
   ms.innerHTML='<option value="">— Selecciona modelo —</option>';
   d.m.forEach(m=>ms.innerHTML+=`<option value="${m}">${m}</option>`);
@@ -1491,7 +1518,7 @@ async function saveEntry(){
   const row={
     imei1,imei2:document.getElementById('f-imei2').value.trim(),
     serial:document.getElementById('f-serial').value.trim(),
-    brand:document.getElementById('f-brand').value,
+    platform:selPlat,brand:document.getElementById('f-brand').value,
     model:getModel(),color,storage:document.getElementById('f-storage').value,
     price:document.getElementById('f-price').value.trim(),
     status:document.getElementById('f-status').value,
@@ -1796,7 +1823,9 @@ function renderReports(){
 }
 
 function resetAll(){
-  sv={imei1:'',imei2:'',serial:''};currentStep=1;updateStepUI();selColor='';photoData=null;
+  sv={imei1:'',imei2:'',serial:''};currentStep=1;updateStepUI();selColor='';photoData=null;selPlat='';
+  document.getElementById('btn-ios').className='plat-btn';
+  document.getElementById('btn-android').className='plat-btn';
   ['f-imei1','f-imei2','f-serial','f-price','f-notes'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';el.classList.remove('fc-ok');}});
   document.getElementById('f-brand').value='';
   document.getElementById('f-model').innerHTML='<option value="">— Selecciona marca —</option><option value="__m__">✏️ Escribir manualmente...</option>';
