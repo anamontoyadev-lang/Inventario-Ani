@@ -1018,7 +1018,7 @@ async function doLogin(){
   }
 
   const u=USERS[user];
-  if(!u||u.password!==pass){err.textContent='Usuario o contraseña incorrectos';err.classList.add('vis');return;}
+  if(!u||String(u.password).trim()!==String(pass).trim()){err.textContent='Usuario o contraseña incorrectos';err.classList.add('vis');return;}
   currentUser={username:user,role:u.role,store:u.store,name:u.name};
   try{LS.setItem('imei_user',JSON.stringify(currentUser));}catch(e){}
   showApp();
@@ -2320,7 +2320,8 @@ async function loadUserLog(){
 async function loadUsersFromSheets(){
   if(!isValidUrl(scriptUrl)) return;
   try{
-    const url = scriptUrl+'?action=get_users&role=admin';
+    // pre_login=1 indica que la petición viene antes de autenticarse
+    const url = scriptUrl+'?action=get_users&role=admin&pre_login=1';
     const res  = await fetch(url,{cache:'no-store'});
     const text = await res.text();
     let d; try{ d=JSON.parse(text); }catch(e){ return; }
@@ -2328,19 +2329,18 @@ async function loadUsersFromSheets(){
       let changed=false;
       d.users.forEach(u=>{
         if(!u.username) return;
+        // Forzar todo a string (Sheets puede devolver números)
+        const pwd   = String(u.password||'').trim();
+        const name  = String(u.name||'').trim();
+        const store = String(u.store||'').trim();
+        const role  = String(u.role||'store').trim();
         if(USERS[u.username]){
-          // Actualizar SIEMPRE desde Sheets (Sheets es fuente de verdad)
-          if(u.password){ USERS[u.username].password=u.password; changed=true; }
-          if(u.name)    { USERS[u.username].name=u.name;         changed=true; }
-          if(u.store)   { USERS[u.username].store=u.store;       changed=true; }
+          if(pwd)   { USERS[u.username].password=pwd;           changed=true; }
+          if(name)  { USERS[u.username].name=name;              changed=true; }
+          if(store) { USERS[u.username].store=store;            changed=true; }
+          if(role)  { USERS[u.username].role=role;              changed=true; }
         } else {
-          // Usuario en Sheets que no está en defaults: agregarlo
-          USERS[u.username]={
-            password: u.password||'',
-            role:     u.role||'store',
-            store:    u.store||null,
-            name:     u.name||u.username
-          };
+          USERS[u.username]={password:pwd,role,store:store||null,name:name||u.username};
           changed=true;
         }
       });
