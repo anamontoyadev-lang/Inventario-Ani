@@ -297,10 +297,7 @@ body[data-role="leader"] #notif-bell-wrap { display: flex; }
 .sc-ctrls .btn{flex:1;justify-content:center;padding:10px 12px;}
 
 /* PLATFORM */
-.plat-row{display:flex;margin-bottom:12px;border-radius:10px;overflow:hidden;border:1.5px solid var(--border);}
-.plat-btn{flex:1;padding:11px;text-align:center;cursor:pointer;font-size:14px;font-weight:700;transition:all .2s;border:none;background:transparent;color:var(--muted);}
-.plat-btn.ai{background:linear-gradient(135deg,rgba(124,92,191,.12),rgba(106,50,159,.06));color:var(--purple3);}
-.plat-btn.aa{background:linear-gradient(135deg,rgba(42,122,74,.1),rgba(42,122,74,.04));color:var(--success);}
+
 
 /* FORM */
 .fsec{padding:14px 16px;border-top:1px solid var(--border);}
@@ -630,15 +627,12 @@ tr.nr td{animation:rowIn .5s ease;}
       <div class="panel" id="entry-panel">
         <div class="ph"><span class="ph-title">📱 Datos del equipo</span></div>
         <div class="fsec">
-          <div class="plat-row">
-            <button class="plat-btn" id="btn-ios" onclick="setPlatform('iOS')">🍎 iPhone</button>
-            <button class="plat-btn" id="btn-android" onclick="setPlatform('Android')">🤖 Android</button>
-          </div>
+
           <div class="fg">
             <div class="full"><label class="fl">IMEI 1 *</label><input type="text" id="f-imei1" placeholder="15 dígitos" maxlength="16"></div>
             <div class="full"><label class="fl">IMEI 2</label><input type="text" id="f-imei2" placeholder="15 dígitos"></div>
             <div class="full"><label class="fl">Serial</label><input type="text" id="f-serial" placeholder="Número de serie"></div>
-            <div class="full"><label class="fl">Marca</label><select id="f-brand" onchange="onBrand()"><option value="">— Selecciona plataforma —</option></select></div>
+            <div class="full"><label class="fl">Marca</label><select id="f-brand" onchange="onBrand()"><option value="">— Selecciona marca —</option></select></div>
             <div class="full">
               <label class="fl">Modelo</label>
               <select id="f-model" disabled onchange="onModelSel()"><option value="">— Selecciona marca —</option><option value="__m__">✏️ Escribir manualmente...</option></select>
@@ -963,7 +957,7 @@ function isValidUrl(url){
 let currentUser=(()=>{try{return JSON.parse(LS.getItem('imei_user')||'null');}catch(e){return null;}})();
 let mode='entry',scannerRunning=false,currentStep=1,scanLocked=false,detBuf=[];
 let sv={imei1:'',imei2:'',serial:''};
-let selPlat='',selColor='',photoData=null,curTab='inv';
+let selColor='',photoData=null,curTab='inv';
 
 // ─── NOTIFICATIONS STATE ───
 let notifications=[];
@@ -1000,27 +994,41 @@ function saveUrl(){
   el.style.borderColor='var(--success)';
   setTimeout(()=>el.style.borderColor='',2000);
 }
-function doLogin(){
+async function doLogin(){
   const user=document.getElementById('login-user').value.trim().toLowerCase();
   const pass=document.getElementById('login-pass').value;
   const err=document.getElementById('login-err');
+  const btn=document.querySelector('.login-btn');
   err.classList.remove('vis');
   if(!user||!pass){err.textContent='Ingresa usuario y contraseña';err.classList.add('vis');return;}
+
+  // Intentar cargar usuarios desde Sheets (fallo silencioso — usa caché local si no hay red)
+  if(isValidUrl(scriptUrl)){
+    if(btn){btn.textContent='⟳ Verificando...';btn.disabled=true;}
+    try{
+      await Promise.race([
+        loadUsersFromSheets(),
+        new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),5000))
+      ]);
+    }catch(e){
+      // Sin red o timeout: continuar con USERS en caché/defaults
+      console.warn('Login sin Sheets (modo offline):', e.message);
+    }
+    if(btn){btn.textContent='Ingresar →';btn.disabled=false;}
+  }
+
   const u=USERS[user];
   if(!u||u.password!==pass){err.textContent='Usuario o contraseña incorrectos';err.classList.add('vis');return;}
   currentUser={username:user,role:u.role,store:u.store,name:u.name};
   try{LS.setItem('imei_user',JSON.stringify(currentUser));}catch(e){}
   showApp();
-  // Cargar usuarios desde Sheets primero para tener nombres actualizados
-  loadUsersFromSheets().then(()=>{
-    updateStoreSelects(); // asegurar select con nombres frescos
-    loadFromSheets().then(()=>{
-      renderTables();
-      updateStats();
-      if(curTab==='rep') renderReports();
-      initSeenMovs();
-      startNotifPolling();
-    });
+  updateStoreSelects();
+  loadFromSheets().then(()=>{
+    renderTables();
+    updateStats();
+    if(curTab==='rep') renderReports();
+    initSeenMovs();
+    startNotifPolling();
   });
 }
 function showApp(){
@@ -1220,19 +1228,7 @@ function setMode(m){
 }
 
 // ─── CATALOG ───
-function setPlatform(p){
-  selPlat=p;
-  document.getElementById('btn-ios').className='plat-btn'+(p==='iOS'?' ai':'');
-  document.getElementById('btn-android').className='plat-btn'+(p==='Android'?' aa':'');
-  const bs=document.getElementById('f-brand');
-  bs.innerHTML='<option value="">— Selecciona marca —</option>';
-  Object.keys(CAT[p]||{}).forEach(b=>bs.innerHTML+=`<option value="${b}">${b}</option>`);
-  document.getElementById('f-model').innerHTML='<option value="">— Selecciona marca —</option><option value="__m__">✏️ Escribir manualmente...</option>';
-  document.getElementById('f-model').disabled=true;
-  document.getElementById('f-model-m').style.display='none';
-  document.getElementById('f-color').innerHTML='<option value="">—</option>';
-  document.getElementById('color-sw').innerHTML='';selColor='';
-}
+
 function onModelSel(){
   const v=document.getElementById('f-model').value;
   document.getElementById('f-model-m').style.display=v==='__m__'?'block':'none';
@@ -1244,8 +1240,8 @@ function getModel(){
 }
 function onBrand(){
   const br=document.getElementById('f-brand').value;
-  if(!br||!selPlat)return;
-  const d=CAT[selPlat][br];if(!d)return;
+  if(!br)return;
+  const d=(CAT['iOS'][br]||CAT['Android'][br]);if(!d)return;
   const ms=document.getElementById('f-model');
   ms.innerHTML='<option value="">— Selecciona modelo —</option>';
   d.m.forEach(m=>ms.innerHTML+=`<option value="${m}">${m}</option>`);
@@ -1495,7 +1491,7 @@ async function saveEntry(){
   const row={
     imei1,imei2:document.getElementById('f-imei2').value.trim(),
     serial:document.getElementById('f-serial').value.trim(),
-    platform:selPlat,brand:document.getElementById('f-brand').value,
+    brand:document.getElementById('f-brand').value,
     model:getModel(),color,storage:document.getElementById('f-storage').value,
     price:document.getElementById('f-price').value.trim(),
     status:document.getElementById('f-status').value,
@@ -1800,7 +1796,7 @@ function renderReports(){
 }
 
 function resetAll(){
-  sv={imei1:'',imei2:'',serial:''};currentStep=1;updateStepUI();selColor='';photoData=null;selPlat='';
+  sv={imei1:'',imei2:'',serial:''};currentStep=1;updateStepUI();selColor='';photoData=null;
   ['f-imei1','f-imei2','f-serial','f-price','f-notes'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';el.classList.remove('fc-ok');}});
   document.getElementById('f-brand').value='';
   document.getElementById('f-model').innerHTML='<option value="">— Selecciona marca —</option><option value="__m__">✏️ Escribir manualmente...</option>';
@@ -1812,7 +1808,7 @@ function resetAll(){
   document.getElementById('photo-img').style.display='none';document.getElementById('photo-img').src='';
   document.getElementById('no-photo').style.display='flex';
   document.getElementById('photo-input').value='';document.getElementById('gallery-input').value='';
-  document.getElementById('btn-ios').className='plat-btn';document.getElementById('btn-android').className='plat-btn';
+
 }
 function showFb(msg,type,duration){
   const el=document.getElementById('feedback');
@@ -1842,7 +1838,7 @@ function exportCSV(){
   const isInv=curTab==='inv';const data=isInv?inv:mov;
   if(!data.length){showFb('No hay datos','error');return;}
   let h,b;
-  if(isInv){h=['#','Tienda','IMEI1','IMEI2','Serial','Plataforma','Marca','Modelo','Color','GB','Precio','Estado','Fecha','Stock','FotoURL'];b=data.map((r,i)=>[data.length-i,r.store||'',r.imei1,r.imei2||'',r.serial||'',r.platform||'',r.brand||'',`"${r.model||''}"`,r.color||'',r.storage||'',r.price||'',r.status||'',r.date,r.stock,r.photoUrl||''].join(','));}
+  if(isInv){h=['#','Tienda','IMEI1','IMEI2','Serial','Marca','Modelo','Color','GB','Precio','Estado','Fecha','Stock','FotoURL'];b=data.map((r,i)=>[data.length-i,r.store||'',r.imei1,r.imei2||'',r.serial||'',r.brand||'',`"${r.model||''}"`,r.color||'',r.storage||'',r.price||'',r.status||'',r.date,r.stock,r.photoUrl||''].join(','));}
   else{h=['#','Tienda','Tipo','IMEI1','Marca','Modelo','GB','Precio','Estado','Fecha','Hora','Notas'];b=data.map((r,i)=>[data.length-i,r.store||'',r.type,r.imei1,r.brand||'',`"${r.model||''}"`,r.storage||'',r.price||'',r.status||'',r.date,r.time,`"${r.notes||''}"`].join(','));}
   const blob=new Blob([[h.join(','),...b].join('\n')],{type:'text/csv;charset=utf-8;'});
   Object.assign(document.createElement('a'),{href:URL.createObjectURL(blob),download:`${isInv?'inventario':'movimientos'}_${new Date().toISOString().slice(0,10)}.csv`}).click();
@@ -2102,10 +2098,9 @@ async function doBulkImport(){
 
     // Determinar tienda: usar la del excel si existe, sino la del usuario actual
     const rowStore=r.store||currentUser.store||'Admin';
-    const platform=r.brand&&(r.brand.toLowerCase().includes('apple')||r.brand.toLowerCase().includes('iphone'))?'iOS':'Android';
     const row={
       imei1:r.imei1,imei2:r.imei2||'',serial:r.serial||'',
-      platform,brand:r.brand||'',model:r.model||'',
+      brand:r.brand||'',model:r.model||'',
       color:r.color||'',storage:r.storage||'',price:r.price||'',
       status:r.status||'Nuevo',notes:r.notes||'Carga masiva',
       date,time,store:rowStore,
@@ -2332,19 +2327,32 @@ async function loadUsersFromSheets(){
     if(d.success && d.users && d.users.length){
       let changed=false;
       d.users.forEach(u=>{
+        if(!u.username) return;
         if(USERS[u.username]){
-          if(u.password && u.password!==USERS[u.username].password){ USERS[u.username].password=u.password; changed=true; }
-          if(u.name     && u.name!==USERS[u.username].name)        { USERS[u.username].name=u.name;         changed=true; }
-          if(u.store    && u.store!==USERS[u.username].store)       { USERS[u.username].store=u.store;       changed=true; }
+          // Actualizar SIEMPRE desde Sheets (Sheets es fuente de verdad)
+          if(u.password){ USERS[u.username].password=u.password; changed=true; }
+          if(u.name)    { USERS[u.username].name=u.name;         changed=true; }
+          if(u.store)   { USERS[u.username].store=u.store;       changed=true; }
+        } else {
+          // Usuario en Sheets que no está en defaults: agregarlo
+          USERS[u.username]={
+            password: u.password||'',
+            role:     u.role||'store',
+            store:    u.store||null,
+            name:     u.name||u.username
+          };
+          changed=true;
         }
       });
       if(changed){
-        saveUsersCache(); // persistir en localStorage
-        updateStoreSelects();
-        if(curTab==='rep') renderReports();
+        saveUsersCache();
+        if(typeof updateStoreSelects==='function') updateStoreSelects();
+        if(curTab==='rep' && typeof renderReports==='function') renderReports();
       }
     }
-  }catch(e){}
+  }catch(e){
+    // Silenciar — fallo de red es esperado en modo offline
+  }
 }
 
 // ─── POLLING NOTIFICACIONES ───
