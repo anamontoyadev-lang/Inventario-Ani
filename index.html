@@ -927,11 +927,13 @@ function doLogin(){
   currentUser={username:user,role:u.role,store:u.store,name:u.name};
   try{LS.setItem('imei_user',JSON.stringify(currentUser));}catch(e){}
   showApp();
-  // Primero cargar usuarios actualizados desde Sheets, luego los datos
+  // Cargar usuarios desde Sheets primero para tener nombres actualizados
   loadUsersFromSheets().then(()=>{
+    updateStoreSelects(); // asegurar select con nombres frescos
     loadFromSheets().then(()=>{
       renderTables();
       updateStats();
+      if(curTab==='rep') renderReports();
       initSeenMovs();
       startNotifPolling();
     });
@@ -1508,6 +1510,7 @@ function updateStoreSelects(){
 }
 
 function renderTables(){
+  updateStoreSelects();
   updateStats();
   const si=s=>s==='synced'?'<span style="color:var(--success)">✓</span>':s==='sending'?'<span class="spin">⟳</span>':s==='error'?'<span style="color:var(--rose2)">✗</span>':'<span style="color:var(--warning)">⏳</span>';
   const isAdmin=currentUser&&currentUser.role==='admin';
@@ -2194,14 +2197,17 @@ async function loadUsersFromSheets(){
     const res  = await fetch(url,{cache:'no-store'});
     const text = await res.text();
     let d; try{ d=JSON.parse(text); }catch(e){ return; }
-    if(d.success && d.users){
+    if(d.success && d.users && d.users.length){
       d.users.forEach(u=>{
         if(USERS[u.username]){
-          USERS[u.username].password = u.password||USERS[u.username].password;
-          USERS[u.username].name     = u.name||USERS[u.username].name;
-          USERS[u.username].store    = u.store||USERS[u.username].store;
+          if(u.password) USERS[u.username].password = u.password;
+          if(u.name)     USERS[u.username].name     = u.name;
+          if(u.store)    USERS[u.username].store    = u.store;
         }
       });
+      // Actualizar selects y reportes con nombres frescos
+      updateStoreSelects();
+      if(curTab==='rep') renderReports();
     }
   }catch(e){}
 }
