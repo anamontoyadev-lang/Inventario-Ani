@@ -850,19 +850,39 @@ const LS={
   removeItem:k=>{try{localStorage.removeItem(k);}catch(e){delete _mem[k];}}
 };
 
-// ─── USERS ───
-const USERS={
-  'admin':  {password:'Admin2024!',role:'admin', store:null,      name:'Administrador'},
-  'tienda1':{password:'Tienda1#',  role:'store', store:'Tienda 1',name:'Tienda 1'},
-  'tienda2':{password:'Tienda2#',  role:'store', store:'Tienda 2',name:'Tienda 2'},
-  'tienda3':{password:'Tienda3#',  role:'store', store:'Tienda 3',name:'Tienda 3'},
-  'tienda4':{password:'Tienda4#',  role:'store', store:'Tienda 4',name:'Tienda 4'},
-  'tienda5':{password:'Tienda5#',  role:'store', store:'Tienda 5',name:'Tienda 5'},
-  'tienda6':{password:'Tienda6#',  role:'store', store:'Tienda 6',name:'Tienda 6'},
-  'tienda7':{password:'Tienda7#',  role:'store', store:'Tienda 7',name:'Tienda 7'},
-  'lider1': {password:'Lider1#2024', role:'leader', store:null, name:'Líder Zona 1'},
-  'lider2': {password:'Lider2#2024', role:'leader', store:null, name:'Líder Zona 2'},
+// ─── USERS ─── (se sobreescriben desde Sheets al iniciar)
+const USERS_DEFAULT={
+  'admin':  {password:'Admin2024!', role:'admin',  store:null,      name:'Administrador'},
+  'tienda1':{password:'Tienda1#',   role:'store',  store:'Tienda 1',name:'Tienda 1'},
+  'tienda2':{password:'Tienda2#',   role:'store',  store:'Tienda 2',name:'Tienda 2'},
+  'tienda3':{password:'Tienda3#',   role:'store',  store:'Tienda 3',name:'Tienda 3'},
+  'tienda4':{password:'Tienda4#',   role:'store',  store:'Tienda 4',name:'Tienda 4'},
+  'tienda5':{password:'Tienda5#',   role:'store',  store:'Tienda 5',name:'Tienda 5'},
+  'tienda6':{password:'Tienda6#',   role:'store',  store:'Tienda 6',name:'Tienda 6'},
+  'tienda7':{password:'Tienda7#',   role:'store',  store:'Tienda 7',name:'Tienda 7'},
+  'lider1': {password:'Lider1#2024',role:'leader', store:null,      name:'Líder Zona 1'},
+  'lider2': {password:'Lider2#2024',role:'leader', store:null,      name:'Líder Zona 2'},
 };
+// Cargar desde caché local si existe (persiste cambios entre recargas sin Sheets)
+let USERS=(()=>{
+  try{
+    const cached=LS.getItem('users_cache_v1');
+    if(cached){
+      const parsed=JSON.parse(cached);
+      // Mezclar: usar cached pero respetar estructura de defaults para usuarios nuevos
+      const merged={...USERS_DEFAULT};
+      Object.keys(parsed).forEach(k=>{
+        if(merged[k]) merged[k]={...merged[k],...parsed[k]};
+      });
+      return merged;
+    }
+  }catch(e){}
+  return {...USERS_DEFAULT};
+})();
+
+function saveUsersCache(){
+  try{ LS.setItem('users_cache_v1',JSON.stringify(USERS)); }catch(e){}
+}
 
 // ─── STATE ───
 let inv=(()=>{try{return JSON.parse(LS.getItem('inv_v6')||'[]');}catch(e){return [];}})();
@@ -2104,6 +2124,8 @@ async function saveUser(username){
       try{ LS.setItem('imei_user', JSON.stringify(currentUser)); }catch(e){}
     }
   }
+  // Guardar en caché local inmediatamente (persiste aunque Sheets falle)
+  saveUsersCache();
 
   // Guardar en Sheets
   if(isValidUrl(scriptUrl)){
@@ -2143,14 +2165,16 @@ async function saveUser(username){
         if(curTab==='rep') renderReports(); // refrescar reportes
         loadUserLog();
       } else {
-        // Revertir cambios en memoria si Sheets falló
+        // Revertir cambios en memoria y caché si Sheets falló
         USERS[username].password = oldPass;
         if(nameChanged){ USERS[username].name=oldName; USERS[username].store=oldName; }
+        saveUsersCache();
         showFb('⚠ Error Sheets: '+(d.error||'sin detalle'),'error',6000);
       }
     }catch(e){
       USERS[username].password = oldPass;
       if(nameChanged){ USERS[username].name=oldName; USERS[username].store=oldName; }
+      saveUsersCache();
       showFb('⚠ Error de red al guardar','error');
     }
   } else {
@@ -2198,16 +2222,19 @@ async function loadUsersFromSheets(){
     const text = await res.text();
     let d; try{ d=JSON.parse(text); }catch(e){ return; }
     if(d.success && d.users && d.users.length){
+      let changed=false;
       d.users.forEach(u=>{
         if(USERS[u.username]){
-          if(u.password) USERS[u.username].password = u.password;
-          if(u.name)     USERS[u.username].name     = u.name;
-          if(u.store)    USERS[u.username].store    = u.store;
+          if(u.password && u.password!==USERS[u.username].password){ USERS[u.username].password=u.password; changed=true; }
+          if(u.name     && u.name!==USERS[u.username].name)        { USERS[u.username].name=u.name;         changed=true; }
+          if(u.store    && u.store!==USERS[u.username].store)       { USERS[u.username].store=u.store;       changed=true; }
         }
       });
-      // Actualizar selects y reportes con nombres frescos
-      updateStoreSelects();
-      if(curTab==='rep') renderReports();
+      if(changed){
+        saveUsersCache(); // persistir en localStorage
+        updateStoreSelects();
+        if(curTab==='rep') renderReports();
+      }
     }
   }catch(e){}
 }
@@ -2319,11 +2346,16 @@ if(currentUser&&scriptUrl&&scriptUrl.includes('/exec')){
   showApp();
   renderTables(); // render inmediato con lo que hay en localStorage
   updateStats();
-  loadFromSheets().then(()=>{
-    renderTables();
-    updateStats();
-    initSeenMovs();
-    startNotifPolling();
+  // Cargar usuarios PRIMERO para tener nombres y contraseñas actualizadas
+  loadUsersFromSheets().then(()=>{
+    updateStoreSelects();
+    loadFromSheets().then(()=>{
+      renderTables();
+      updateStats();
+      if(curTab==='rep') renderReports();
+      initSeenMovs();
+      startNotifPolling();
+    });
   });
 }
 else{currentUser=null;try{LS.removeItem('imei_user');}catch(e){}}
