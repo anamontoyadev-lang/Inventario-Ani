@@ -361,6 +361,11 @@ tr.nr td{animation:rowIn .5s ease;}
 .imei-c{font-family:'JetBrains Mono',monospace;color:var(--purple3);font-size:11px;}
 .badge-in{background:rgba(42,122,74,.1);color:var(--success);border:1px solid rgba(42,122,74,.25);padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;}
 .badge-out{background:rgba(212,92,92,.1);color:var(--rose2);border:1px solid rgba(212,92,92,.25);padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;}
+.st-nuevo{background:rgba(42,122,74,.1);color:var(--success);border:1px solid rgba(42,122,74,.2);padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;}
+.st-semi{background:rgba(53,130,220,.1);color:#3585dc;border:1px solid rgba(53,130,220,.2);padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;}
+.st-reac{background:rgba(154,104,0,.1);color:var(--warning);border:1px solid rgba(154,104,0,.2);padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;}
+.st-rep{background:rgba(212,92,92,.1);color:var(--rose2);border:1px solid rgba(212,92,92,.2);padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;}
+.st-otro{background:rgba(124,92,191,.1);color:var(--purple3);border:1px solid rgba(124,92,191,.2);padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;}
 .s1{color:var(--success);font-weight:700;font-size:12px;}
 .s0{color:var(--rose2);font-weight:700;font-size:12px;}
 .pt{width:32px;height:32px;border-radius:6px;object-fit:cover;border:1px solid var(--border);}
@@ -668,7 +673,7 @@ tr.nr td{animation:rowIn .5s ease;}
         </div>
         <div class="search-count" id="search-inv-count"></div>
         <div class="tbl-wrap">
-          <table><thead><tr><th>#</th><th>Foto</th><th>Tienda</th><th>IMEI 1</th><th>Marca</th><th>Modelo</th><th>Color</th><th>GB</th><th>Precio</th><th>Stock</th><th>Sync</th><th id="th-del" style="display:none">Eliminar</th></tr></thead><tbody id="tb-inv"></tbody></table>
+          <table><thead><tr><th>#</th><th>Foto</th><th>Tienda</th><th>IMEI 1</th><th>Marca</th><th>Modelo</th><th>Color</th><th>GB</th><th>Precio</th><th>Estado</th><th>Stock</th><th>Sync</th><th id="th-del" style="display:none">Eliminar</th></tr></thead><tbody id="tb-inv"></tbody></table>
         </div>
       </div>
 
@@ -684,7 +689,7 @@ tr.nr td{animation:rowIn .5s ease;}
           <select id="f-type" onchange="renderTables()" style="font-size:12px"><option value="">Entradas y Salidas</option><option value="ENTRADA">Solo Entradas ✅</option><option value="SALIDA">Solo Salidas 🔴</option></select>
         </div>
         <div class="search-count" id="search-mov-count"></div>
-        <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tienda</th><th>Tipo</th><th>IMEI 1</th><th>Marca</th><th>Modelo</th><th>Costo</th><th style="color:var(--success)">Venta</th><th>Fecha</th><th>Hora</th><th>Notas</th><th id="th-del-mov" style="display:none">Eliminar</th></tr></thead><tbody id="tb-mov"></tbody></table></div>
+        <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Tienda</th><th>Tipo</th><th>IMEI 1</th><th>Marca</th><th>Modelo</th><th>Estado</th><th>Costo</th><th style="color:var(--success)">Venta</th><th>Fecha</th><th>Hora</th><th>Notas</th><th id="th-del-mov" style="display:none">Eliminar</th></tr></thead><tbody id="tb-mov"></tbody></table></div>
       </div>
 
       <!-- REPORTS -->
@@ -1533,6 +1538,7 @@ function renderTables(){
   updateStoreSelects();
   updateStats();
   const si=s=>s==='synced'?'<span style="color:var(--success)">✓</span>':s==='sending'?'<span class="spin">⟳</span>':s==='error'?'<span style="color:var(--rose2)">✗</span>':'<span style="color:var(--warning)">⏳</span>';
+  const stBadge=s=>{const v=String(s||'').toLowerCase();if(v.includes('nuevo'))return`<span class="st-nuevo">${s}</span>`;if(v.includes('semi'))return`<span class="st-semi">${s}</span>`;if(v.includes('reac'))return`<span class="st-reac">${s}</span>`;if(v.includes('repar'))return`<span class="st-rep">${s}</span>`;return s?`<span class="st-otro">${s}</span>`:'—';};
   const isAdmin=currentUser&&currentUser.role==='admin';
 
   // ── Tabla Inventario ── con búsqueda
@@ -1559,6 +1565,7 @@ function renderTables(){
       <td style="font-size:11px">${r.color||'—'}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.storage||'—'}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.price?'$'+parseFloat(r.price).toFixed(2):'—'}</td>
+      <td>${stBadge(r.status)}</td>
       <td><span class="${(String(r.stock)==='1'||r.stock===1)?'s1':'s0'}">${(String(r.stock)==='1'||r.stock===1)?'✓ Disp':'✗ Baja'}</span></td>
       <td>${si(r.syncStatus)}</td>
       ${isAdmin?`<td><button class="del-btn" onclick="openDeleteModal('${r.imei1}')">🗑 Eliminar</button></td>`:''}
@@ -1590,6 +1597,7 @@ function renderTables(){
       <td class="imei-c">${r.imei1||'—'}</td>
       <td style="font-size:12px">${r.brand||'—'}</td>
       <td style="font-size:12px">${r.model||'—'}</td>
+      <td>${stBadge(r.status)}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.price?'$'+parseFloat(r.price).toFixed(2):'—'}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${r.salePrice?'var(--success)':'var(--muted)'}">${r.salePrice?'$'+parseFloat(r.salePrice).toFixed(2):'—'}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${r.date||'—'}</td>
@@ -1666,6 +1674,19 @@ function renderReports(){
     // Valor en dinero del stock activo de esta tienda
     const storeMoney=ss.reduce((sum,r)=>sum+(parseFloat(r.price)||0),0);
 
+    // Desglose por estado del stock activo
+    const byStatus={};
+    ss.forEach(r=>{
+      const st=String(r.status||'Sin estado').trim()||'Sin estado';
+      byStatus[st]=(byStatus[st]||0)+1;
+    });
+    const statusRows=Object.entries(byStatus)
+      .sort((a,b)=>b[1]-a[1])
+      .map(([st,cnt])=>{
+        const cls=st.toLowerCase().includes('nuevo')?'st-nuevo':st.toLowerCase().includes('semi')?'st-semi':st.toLowerCase().includes('reac')?'st-reac':st.toLowerCase().includes('repar')?'st-rep':'st-otro';
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0"><span class="${cls}">${st}</span><span style="font-weight:700;font-size:12px">${cnt}</span></div>`;
+      }).join('');
+
     html+=`<div class="store-card">
       <div class="store-card-name"><span>🏪</span><span style="background:var(--grad-mix);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:15px">${store}</span></div>
       <div class="store-stats">
@@ -1674,6 +1695,10 @@ function renderReports(){
         <div class="ss-item" style="background:rgba(124,92,191,.08)"><div class="ss-n" style="color:var(--purple3)">${se}</div><div class="ss-l">Entradas</div></div>
         <div class="ss-item" style="background:rgba(154,104,0,.08)"><div class="ss-n" style="color:var(--warning)">${se+sx}</div><div class="ss-l">Movim.</div></div>
       </div>
+      ${statusRows?`<div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Estado del stock</div>
+        ${statusRows}
+      </div>`:''}
       <div class="store-money-row">
         <span class="store-money-lbl">💰 Valor stock</span>
         <span class="store-money-val">${fmt$(storeMoney)}</span>
